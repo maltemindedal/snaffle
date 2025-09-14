@@ -48,6 +48,18 @@ class TestCLI(unittest.TestCase):
             main()
             mocked_print.assert_called_with("Created")
 
+    @patch("PyFetch.http_client.HTTPClient.post")
+    @patch(
+        "sys.argv",
+        ["http_cli", "POST", "https://api.example.com", "--progress"],
+    )
+    def test_progress_is_not_available_for_post(self, mock_post):
+        """Test that --progress is not available for POST command"""
+        mock_post.return_value.text = "{}"
+        with self.assertRaises(SystemExit):
+            with patch('sys.stderr', new_callable=io.StringIO):
+                main()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -73,13 +73,6 @@ def add_common_arguments(parser):
         action="store_true",
         help="Enable verbose logging for debugging.",
     )
-    parser.add_argument(
-        "--progress",
-        action="store_true",
-        help="Show progress bar for downloads larger than 5MB",
-    )
-
-
 def create_parser():
     """Create an argument parser for the HTTP CLI client."""
 
@@ -109,6 +102,11 @@ def create_parser():
         "GET", help="Make a GET request", aliases=["get"]
     )
     add_common_arguments(get_parser)
+    get_parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="Show progress bar for downloads larger than 5MB",
+    )
 
     # POST command
     post_parser = subparsers.add_parser(
@@ -179,7 +177,9 @@ def main(suppress_output=False):
         return
 
     client = HTTPClient(
-        timeout=args.timeout, verbose=args.verbose, show_progress=args.progress
+        timeout=args.timeout,
+        verbose=args.verbose,
+        show_progress=args.progress if hasattr(args, "progress") else False,
     )
 
     try:
