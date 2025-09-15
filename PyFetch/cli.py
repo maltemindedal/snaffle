@@ -1,4 +1,9 @@
-"""Command-line interface for making HTTP requests with support for common HTTP methods."""
+"""Command-line interface for making HTTP requests.
+
+This module provides a command-line interface (CLI) for making HTTP requests
+using the PyFetch HTTP client. It supports common HTTP methods, custom headers,
+JSON data, and other features.
+"""
 
 import argparse
 import json
@@ -10,7 +15,17 @@ from PyFetch.http_client import HTTPClient
 
 
 def show_examples(suppress_output=False):
-    """Show examples of how to use the HTTP CLI client."""
+    """Prints usage examples for the PyFetch CLI.
+
+    This function displays a list of common commands to guide the user.
+
+    Args:
+        suppress_output (bool, optional): If True, the output is not printed
+            to the console. Defaults to False.
+
+    Returns:
+        str: A string containing the usage examples.
+    """
     examples = """
 Examples:
     1. Normal GET request:
@@ -52,7 +67,14 @@ Examples:
 
 
 def add_common_arguments(parser):
-    """Add arguments that are common to multiple commands"""
+    """Adds common command-line arguments to the given parser.
+
+    This function standardizes the arguments for URL, timeout, headers, and verbosity
+    across different sub-commands.
+
+    Args:
+        parser (argparse.ArgumentParser): The parser to which the arguments will be added.
+    """
     parser.add_argument("url", help="Target URL")
     parser.add_argument(
         "-t",
@@ -73,11 +95,24 @@ def add_common_arguments(parser):
         action="store_true",
         help="Enable verbose logging for debugging.",
     )
+
+
 def create_parser():
-    """Create an argument parser for the HTTP CLI client."""
+    """Creates and configures the argument parser for the CLI.
+
+    This function sets up the main parser and subparsers for each supported
+    HTTP method, defining the available commands and their arguments.
+
+    Returns:
+        argparse.ArgumentParser: The configured argument parser.
+    """
 
     class CustomFormatter(argparse.HelpFormatter):
-        """Custom formatter for the HTTP CLI client."""
+        """Custom help formatter to support multi-line help messages.
+
+        This formatter allows help text to be split into multiple lines
+        by prefixing it with "R|".
+        """
 
         def _split_lines(self, text, width):
             if text.startswith("R|"):
@@ -163,7 +198,16 @@ def create_parser():
 
 
 def main(suppress_output=False):
-    """Main function for the HTTP CLI client."""
+    """The main entry point for the PyFetch CLI.
+
+    This function parses command-line arguments, initializes the HTTP client,
+    and executes the requested HTTP command. It also handles response printing
+    and error reporting.
+
+    Args:
+        suppress_output (bool, optional): If True, suppresses all output to the
+            console, which is useful for testing. Defaults to False.
+    """
     parser = create_parser()
     args = parser.parse_args()
 
