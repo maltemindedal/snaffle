@@ -1,4 +1,9 @@
-"""Entry point for the HTTP CLI application."""
+"""Main entry point for the PyFetch command-line application.
+
+This module allows the PyFetch application to be executed as a package
+by running `python -m PyFetch`. It handles the initial execution and
+catches common exceptions like `KeyboardInterrupt`.
+"""
 
 import sys
 

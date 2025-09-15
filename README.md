@@ -1,11 +1,14 @@
-# PyFetch: A Lightweight HTTP CLI
+# PyFetch: A Lightweight HTTP CLI and Library
 
-A lightweight command-line interface for making HTTP requests. Built with Python,
-this tool provides an easy way to make GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS requests with support for JSON data, customizable timeouts, automatic retries on failures, and a verbose mode for detailed logging.
+A lightweight command-line interface and Python library for making HTTP requests.
+Built with Python, this tool provides an easy way to make GET, POST, PUT, PATCH,
+DELETE, HEAD, and OPTIONS requests with support for JSON data, customizable timeouts,
+automatic retries on failures, and a verbose mode for detailed logging.
 
 ## Features
 
 - Simple command-line interface
+- Can be used as a Python library
 - Case-insensitive commands (GET/get, POST/post etc.)
 - Support for GET, PUT, POST, PATCH, DELETE, HEAD, and OPTIONS requests
 - JSON data handling for POST requests
@@ -54,7 +57,51 @@ source venv/bin/activate
 pip install -e .
 ```
 
-## Usage
+## Library Usage
+
+You can also use PyFetch as a library in your Python projects.
+
+### Creating a Client
+
+First, import and create an instance of the `HTTPClient`:
+
+```python
+from PyFetch.http_client import HTTPClient
+
+client = HTTPClient(timeout=30, retries=3, verbose=False)
+```
+
+### Making Requests
+
+You can then use the client to make HTTP requests:
+
+```python
+# Make a GET request
+response = client.get("https://httpbin.org/get")
+print(response.json())
+
+# Make a POST request with JSON data
+data = {"key": "value"}
+response = client.post("https://httpbin.org/post", json=data)
+print(response.json())
+```
+
+### Error Handling
+
+The client raises specific exceptions for different types of errors:
+
+```python
+from PyFetch.exceptions import HTTPClientError, HTTPConnectionError
+
+try:
+    response = client.get("https://a-non-existent-domain.com")
+except HTTPConnectionError as e:
+    print(f"Connection failed: {e}")
+except HTTPClientError as e:
+    print(f"An error occurred: {e}")
+```
+
+## CLI Usage
 
 ### Example Commands
 
