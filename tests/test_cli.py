@@ -57,7 +57,7 @@ class TestCLI(unittest.TestCase):
         """Test that --progress is not available for POST command"""
         mock_post.return_value.text = "{}"
         with self.assertRaises(SystemExit):
-            with patch('sys.stderr', new_callable=io.StringIO):
+            with patch("sys.stderr", new_callable=io.StringIO):
                 main()
 
 
