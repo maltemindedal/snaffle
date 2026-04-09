@@ -4,7 +4,7 @@
 
 - Match CI when preparing an environment: `uv sync --group dev`, then use `uv run ...` for linting, formatting, type checking, and tests.
 - Do not assume the ambient `python` has deps installed. In this repo, `python -m unittest discover tests` fails without `requests`; use the checked-in `.venv` or install first.
-- CI runs on Python 3.10 and 3.11 (`.github/workflows/python-tests.yml`). Package metadata allows `>=3.10` (`pyproject.toml`).
+- CI runs on Python 3.10 and 3.11 (`.github/workflows/ci.yml`). Package metadata allows `>=3.10` (`pyproject.toml`).
 
 ## Repo Shape
 
