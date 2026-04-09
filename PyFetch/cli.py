@@ -11,7 +11,8 @@ import argparse
 import json
 import sys
 import textwrap
-from typing import Any, Sequence, TypedDict
+from collections.abc import Sequence
+from typing import Any, TypedDict
 
 from PyFetch.exceptions import HTTPClientError
 from PyFetch.http_client import HTTPClient

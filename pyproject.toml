@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61,<80"]
+requires = ["setuptools>=61,<77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,11 +7,11 @@ name = "PyFetch"
 version = "1.0.0"
 description = "A simple HTTP CLI client"
 readme = "README.md"
-license = "Apache-2.0"
+license = { file = "LICENSE" }
 authors = [{ name = "Malte Mindedal" }]
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 classifiers = ["Programming Language :: Python :: 3", "Operating System :: OS Independent"]
-dependencies = ["requests>=2.32.4", "tqdm>=4.66.0"]
+dependencies = ["requests>=2.33.1", "tqdm>=4.66.0", "urllib3>=2.6.3"]
 
 [project.scripts]
 pyfetch = "PyFetch.cli:main"
@@ -20,10 +20,10 @@ pyfetch = "PyFetch.cli:main"
 include = ["PyFetch", "PyFetch.*"]
 
 [dependency-groups]
-dev = ["mypy>=1.10,<1.11", "ruff>=0.11.5,<0.12", "types-requests>=2.32.0,<3"]
+dev = ["mypy>=1.13,<2", "ruff>=0.11.5,<0.12", "types-requests>=2.33.0,<3"]
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.10"
 strict = true
 files = ["PyFetch", "tests"]
 
@@ -32,7 +32,7 @@ module = ["tqdm"]
 ignore_missing_imports = true
 
 [tool.ruff]
-target-version = "py38"
+target-version = "py310"
 line-length = 88
 
 [tool.ruff.lint]
