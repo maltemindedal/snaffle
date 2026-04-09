@@ -14,4 +14,12 @@ Public API:
 from PyFetch.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 from PyFetch.http_client import HTTPClient
 
-__all__ = ["HTTPClient", "HTTPClientError", "HTTPConnectionError", "ResponseError"]
+__version__ = "1.0.0"
+
+__all__ = [
+    "HTTPClient",
+    "HTTPClientError",
+    "HTTPConnectionError",
+    "ResponseError",
+    "__version__",
+]

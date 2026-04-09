@@ -26,9 +26,8 @@ automatic retries on failures, and a verbose mode for detailed logging.
 
 ### Prerequisites
 
-- Python 3.7 or higher
-- pip (Python package installer)
-- virtualenv _(recommended)_
+- Python 3.8 or higher
+- [uv](https://docs.astral.sh/uv/) _(recommended)_
 
 ### Setup
 
@@ -39,22 +38,16 @@ git clone https://github.com/maltemindedal/PyFetch.git
 cd PyFetch
 ```
 
-2. Create and activate a virtual environment _(recommended)_:
+2. Sync the project dependencies:
 
 ```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
-
-# Linux/MacOS
-python3 -m venv venv
-source venv/bin/activate
+uv sync --group dev
 ```
 
-3. Install the package in development mode:
+3. Run the CLI from the managed environment:
 
 ```bash
-pip install -e .
+uv run pyfetch HELP
 ```
 
 ## Library Usage
@@ -146,15 +139,29 @@ The project includes a comprehensive test suite using Python's unittest framewor
 
 ### Running Tests
 
-Run all tests using either of these commands:
+Run all tests using the UV-managed environment:
 
 ```bash
-# Using Python's unittest discover
-python -m unittest discover tests
+uv run python -m unittest discover tests
+```
 
-# Using pip's installed test suite
-pip install -e .
-python setup.py test
+### Linting and Formatting
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+```
+
+### Type Checking
+
+```bash
+uv run mypy .
+```
+
+To apply the formatter locally:
+
+```bash
+uv run ruff format .
 ```
 
 ### Test Coverage
@@ -174,6 +181,8 @@ Tests are organized in three main files:
 - `tests/test_cli.py` - Command-line interface tests
 - `tests/test_http_client.py` - HTTP client functionality tests
 - `tests/test_exceptions.py` - Exception handling tests
+
+Typing is enforced with `mypy` in strict mode across both `PyFetch/` and `tests/`.
 
 To add new tests:
 
@@ -332,11 +341,15 @@ All errors are displayed with descriptive messages to help diagnose the issue.
 ### Common Issues
 
 1. Command not found:
-   - Make sure the package is installed (`pip list | findstr PyFetch`)
-   - Ensure your virtual environment is activated
+
+- Run `uv sync --group dev` to install the project and its tooling
+- Use `uv run pyfetch HELP` to invoke the CLI inside the managed environment
+
 2. Import errors:
-   - Try reinstalling the package: `pip install -e .`
-   - Make sure you're using the correct Python environment
+
+- Re-sync the environment: `uv sync --group dev`
+- Make sure you're using the correct Python environment
+
 3. JSON errors:
    - Verify your JSON data is properly formatted
    - Use single quotes around the entire JSON string and double quotes inside

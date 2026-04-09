@@ -12,6 +12,8 @@ class HTTPClientError(Exception):
     allowing for consolidated error handling.
     """
 
+    pass
+
 
 class HTTPConnectionError(HTTPClientError):
     """Raised when a connection to the target server fails.
@@ -20,6 +22,8 @@ class HTTPConnectionError(HTTPClientError):
     server is unreachable.
     """
 
+    pass
+
 
 class ResponseError(HTTPClientError):
     """Raised when the server returns an unsuccessful HTTP status code.
@@ -27,3 +31,5 @@ class ResponseError(HTTPClientError):
     This error is triggered for responses with 4xx (client error) or 5xx
     (server error) status codes.
     """
+
+    pass

@@ -11,9 +11,18 @@ import argparse
 import json
 import sys
 import textwrap
+from typing import Any, Sequence, TypedDict
 
 from PyFetch.exceptions import HTTPClientError
 from PyFetch.http_client import HTTPClient
+
+
+class RequestKwargs(TypedDict, total=False):
+    """Typed keyword arguments passed to the HTTP client."""
+
+    json: Any
+    headers: dict[str, str]
+
 
 EXAMPLES = textwrap.dedent(
     """
@@ -54,7 +63,7 @@ EXAMPLES = textwrap.dedent(
 )
 
 
-def show_examples(suppress_output=False):
+def show_examples(suppress_output: bool = False) -> str:
     """Prints usage examples for the PyFetch CLI.
 
     This function displays a list of common commands to guide the user.
@@ -71,12 +80,12 @@ def show_examples(suppress_output=False):
     return EXAMPLES
 
 
-def _parse_headers(header_args):
+def _parse_headers(header_args: Sequence[str] | None) -> dict[str, str] | None:
     """Parses repeated header arguments into a dictionary."""
     if not header_args:
         return None
 
-    headers = {}
+    headers: dict[str, str] = {}
     for item in header_args:
         if ":" not in item:
             raise ValueError("Invalid header format. Use 'Key: Value'.")
@@ -87,9 +96,9 @@ def _parse_headers(header_args):
     return headers or None
 
 
-def _parse_request_kwargs(args):
+def _parse_request_kwargs(args: argparse.Namespace) -> RequestKwargs:
     """Builds keyword arguments for the HTTP client call."""
-    kwargs = {}
+    kwargs: RequestKwargs = {}
 
     if hasattr(args, "data") and args.data:
         kwargs["json"] = json.loads(args.data)
@@ -101,7 +110,7 @@ def _parse_request_kwargs(args):
     return kwargs
 
 
-def _emit_response(response):
+def _emit_response(response: Any) -> None:
     """Prints a formatted HTTP response."""
     print(f"Status Code: {response.status_code}")
     print("\nHeaders:")
@@ -120,7 +129,7 @@ def _emit_response(response):
         print(response.text)
 
 
-def add_common_arguments(parser):
+def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     """Adds common command-line arguments to the given parser.
 
     This function standardizes the arguments for URL, timeout, headers, and verbosity
@@ -151,7 +160,7 @@ def add_common_arguments(parser):
     )
 
 
-def create_parser():
+def create_parser() -> argparse.ArgumentParser:
     """Creates and configures the argument parser for the CLI.
 
     This function sets up the main parser and subparsers for each supported
@@ -168,7 +177,7 @@ def create_parser():
         by prefixing it with "R|".
         """
 
-        def _split_lines(self, text, width):
+        def _split_lines(self, text: str, width: int) -> list[str]:
             if text.startswith("R|"):
                 return text[2:].splitlines()
             return super()._split_lines(text, width)
@@ -251,7 +260,7 @@ def create_parser():
     return parser
 
 
-def main(argv=None, suppress_output=False):
+def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> None:
     """The main entry point for the PyFetch CLI.
 
     This function parses command-line arguments, initializes the HTTP client,

@@ -7,10 +7,22 @@ and optional progress bars for large downloads.
 
 from __future__ import annotations
 
+from typing import Any, Protocol, cast
+
 import requests
 from tqdm import tqdm
 
 from PyFetch.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
+
+
+class ProgressBar(Protocol):
+    """Protocol for the subset of progress-bar methods used by the client."""
+
+    def update(self, n: float | None = 1) -> bool | None:
+        """Advance the progress display by the provided number of bytes."""
+
+    def close(self) -> None:
+        """Close the progress display and release any related resources."""
 
 
 class HTTPClient:
@@ -34,7 +46,13 @@ class HTTPClient:
     DOWNLOAD_CHUNK_SIZE = 8192
     MIN_SIZE_FOR_PROGRESS = 5 * 1024 * 1024  # 5MB
 
-    def __init__(self, timeout=30, retries=3, verbose=False, show_progress=False):
+    def __init__(
+        self,
+        timeout: int = 30,
+        retries: int = 3,
+        verbose: bool = False,
+        show_progress: bool = False,
+    ) -> None:
         """Initializes the HTTPClient with configuration options.
 
         Args:
@@ -54,7 +72,7 @@ class HTTPClient:
         self.show_progress = show_progress
         self.allowed_methods = self.ALLOWED_METHODS
 
-    def _validate_method(self, method):
+    def _validate_method(self, method: str) -> str:
         """Normalizes and validates an HTTP method name."""
         normalized_method = method.upper()
         if normalized_method not in self.ALLOWED_METHODS:
@@ -64,7 +82,7 @@ class HTTPClient:
             )
         return normalized_method
 
-    def _create_progress_bar(self, total, desc):
+    def _create_progress_bar(self, total: int, desc: str) -> ProgressBar | None:
         """Creates a `tqdm` progress bar if conditions are met.
 
         A progress bar is created if `show_progress` is True and the file size (`total`)
@@ -78,16 +96,23 @@ class HTTPClient:
             tqdm.tqdm or None: A `tqdm` progress bar instance or `None` if the conditions are not met.
         """
         if self.show_progress and total >= self.MIN_SIZE_FOR_PROGRESS:
-            return tqdm(
-                total=total,
-                unit="B",
-                unit_scale=True,
-                desc=desc,
-                disable=not self.show_progress,
+            return cast(
+                ProgressBar,
+                tqdm(
+                    total=total,
+                    unit="B",
+                    unit_scale=True,
+                    desc=desc,
+                    disable=not self.show_progress,
+                ),
             )
         return None
 
-    def _stream_response(self, response, progress_bar=None):
+    def _stream_response(
+        self,
+        response: requests.Response,
+        progress_bar: ProgressBar | None = None,
+    ) -> bytes:
         """Streams the response content and updates the progress bar.
 
         This method iterates over the response content in chunks, allowing for efficient
@@ -116,7 +141,7 @@ class HTTPClient:
 
         return bytes(content)
 
-    def make_request(self, method, url, **kwargs):
+    def make_request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
         """Makes an HTTP request with retry logic and error handling.
 
         This is the core method for all HTTP operations performed by the client. It handles
@@ -187,7 +212,9 @@ class HTTPClient:
                 if attempt == self.retries - 1:
                     raise HTTPClientError(f"Request failed: {str(e)}") from e
 
-    def get(self, url, **kwargs):
+        raise AssertionError("Request retries exhausted unexpectedly")
+
+    def get(self, url: str, **kwargs: Any) -> requests.Response:
         """Sends a GET request to the specified URL.
 
         Args:
@@ -199,7 +226,7 @@ class HTTPClient:
         """
         return self.make_request("GET", url, **kwargs)
 
-    def post(self, url, **kwargs):
+    def post(self, url: str, **kwargs: Any) -> requests.Response:
         """Sends a POST request to the specified URL.
 
         Args:
@@ -211,7 +238,7 @@ class HTTPClient:
         """
         return self.make_request("POST", url, **kwargs)
 
-    def put(self, url, **kwargs):
+    def put(self, url: str, **kwargs: Any) -> requests.Response:
         """Sends a PUT request to the specified URL.
 
         Args:
@@ -223,7 +250,7 @@ class HTTPClient:
         """
         return self.make_request("PUT", url, **kwargs)
 
-    def patch(self, url, **kwargs):
+    def patch(self, url: str, **kwargs: Any) -> requests.Response:
         """Sends a PATCH request to the specified URL.
 
         Args:
@@ -235,7 +262,7 @@ class HTTPClient:
         """
         return self.make_request("PATCH", url, **kwargs)
 
-    def delete(self, url, **kwargs):
+    def delete(self, url: str, **kwargs: Any) -> requests.Response:
         """Sends a DELETE request to the specified URL.
 
         Args:
@@ -247,7 +274,7 @@ class HTTPClient:
         """
         return self.make_request("DELETE", url, **kwargs)
 
-    def head(self, url, **kwargs):
+    def head(self, url: str, **kwargs: Any) -> requests.Response:
         """Sends a HEAD request to the specified URL.
 
         Args:
@@ -259,7 +286,7 @@ class HTTPClient:
         """
         return self.make_request("HEAD", url, **kwargs)
 
-    def options(self, url, **kwargs):
+    def options(self, url: str, **kwargs: Any) -> requests.Response:
         """Sends an OPTIONS request to the specified URL.
 
         Args:
