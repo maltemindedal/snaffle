@@ -5,6 +5,8 @@ using the PyFetch HTTP client. It supports common HTTP methods, custom headers,
 JSON data, and other features.
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import sys
@@ -12,6 +14,44 @@ import textwrap
 
 from PyFetch.exceptions import HTTPClientError
 from PyFetch.http_client import HTTPClient
+
+EXAMPLES = textwrap.dedent(
+    """
+     Examples:
+          1. Normal GET request:
+              pyfetch GET https://httpbin.org/get
+
+          2. GET request with progress bar (for files larger than 5MB):
+              pyfetch GET https://example.com/large-file.zip --progress
+
+          3. GET request with verbose mode to see retry logs and detailed output:
+              pyfetch GET https://httpbin.org/get --verbose
+
+          4. GET request with a custom header (e.g., Authorization token):
+              pyfetch GET https://httpbin.org/headers -H "Authorization: Bearer your_token_here"
+
+          5. POST request with JSON data and custom Content-Type header:
+              pyfetch POST https://httpbin.org/post -d '{"key": "value"}' -H "Content-Type: application/json"
+
+          6. PUT request example to update a resource:
+              pyfetch PUT https://httpbin.org/put -d '{"name": "New Name"}' -H "Content-Type: application/json"
+
+          7. PATCH request example to partially update a resource:
+              pyfetch PATCH https://httpbin.org/patch -d '{"email": "user@example.com"}' -H "Content-Type: application/json"
+
+          8. DELETE request to remove a resource:
+              pyfetch DELETE https://httpbin.org/delete
+
+          9. HEAD request to fetch only headers:
+              pyfetch HEAD https://httpbin.org/get
+
+          10. OPTIONS request to check allowed methods:
+              pyfetch OPTIONS https://httpbin.org/get
+
+          11. Show help message:
+              pyfetch HELP
+     """
+)
 
 
 def show_examples(suppress_output=False):
@@ -26,44 +66,58 @@ def show_examples(suppress_output=False):
     Returns:
         str: A string containing the usage examples.
     """
-    examples = """
-Examples:
-    1. Normal GET request:
-       pyfetch GET https://httpbin.org/get
-
-    2. GET request with progress bar (for files larger than 5MB):
-       pyfetch GET https://example.com/large-file.zip --progress
-
-    3. GET request with verbose mode to see retry logs and detailed output:
-       pyfetch GET https://httpbin.org/get --verbose
-
-    4. GET request with a custom header (e.g., Authorization token):
-       pyfetch GET https://httpbin.org/headers -H "Authorization: Bearer your_token_here"
-
-    5. POST request with JSON data and custom Content-Type header:
-       pyfetch POST https://httpbin.org/post -d '{"key": "value"}' -H "Content-Type: application/json"
-
-    6. PUT request example to update a resource:
-       pyfetch PUT https://httpbin.org/put -d '{"name": "New Name"}' -H "Content-Type: application/json"
-
-    7. PATCH request example to partially update a resource:
-       pyfetch PATCH https://httpbin.org/patch -d '{"email": "user@example.com"}' -H "Content-Type: application/json"
-
-    8. DELETE request to remove a resource:
-       pyfetch DELETE https://httpbin.org/delete
-
-    9. HEAD request to fetch only headers:
-       pyfetch HEAD https://httpbin.org/get
-
-    10. OPTIONS request to check allowed methods:
-       pyfetch OPTIONS https://httpbin.org/get
-
-    11. Show help message:
-       pyfetch HELP
-    """
     if not suppress_output:
-        print(textwrap.dedent(examples))
-    return textwrap.dedent(examples)
+        print(EXAMPLES)
+    return EXAMPLES
+
+
+def _parse_headers(header_args):
+    """Parses repeated header arguments into a dictionary."""
+    if not header_args:
+        return None
+
+    headers = {}
+    for item in header_args:
+        if ":" not in item:
+            raise ValueError("Invalid header format. Use 'Key: Value'.")
+
+        key, value = item.split(":", 1)
+        headers[key.strip()] = value.strip()
+
+    return headers or None
+
+
+def _parse_request_kwargs(args):
+    """Builds keyword arguments for the HTTP client call."""
+    kwargs = {}
+
+    if hasattr(args, "data") and args.data:
+        kwargs["json"] = json.loads(args.data)
+
+    headers = _parse_headers(getattr(args, "header", None))
+    if headers:
+        kwargs["headers"] = headers
+
+    return kwargs
+
+
+def _emit_response(response):
+    """Prints a formatted HTTP response."""
+    print(f"Status Code: {response.status_code}")
+    print("\nHeaders:")
+    for key, value in response.headers.items():
+        print(f"{key}: {value}")
+
+    body = response.text.strip()
+    if not body:
+        return
+
+    print("\nResponse Body:")
+    try:
+        json_data = json.loads(response.text)
+        print(json.dumps(json_data, indent=4))
+    except ValueError:
+        print(response.text)
 
 
 def add_common_arguments(parser):
@@ -197,7 +251,7 @@ def create_parser():
     return parser
 
 
-def main(suppress_output=False):
+def main(argv=None, suppress_output=False):
     """The main entry point for the PyFetch CLI.
 
     This function parses command-line arguments, initializes the HTTP client,
@@ -209,7 +263,7 @@ def main(suppress_output=False):
             console, which is useful for testing. Defaults to False.
     """
     parser = create_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     command = args.command.upper() if args.command else None
 
@@ -227,44 +281,25 @@ def main(suppress_output=False):
     )
 
     try:
-        # Prepare request kwargs
-        kwargs = {}
-        if hasattr(args, "data") and args.data:
-            kwargs["json"] = json.loads(args.data)
-        # Parse headers if provided
-        if hasattr(args, "header") and args.header:
-            headers = {}
-            for item in args.header:
-                if ":" in item:
-                    key, value = item.split(":", 1)
-                    headers[key.strip()] = value.strip()
-            if headers:
-                kwargs["headers"] = headers
+        kwargs = _parse_request_kwargs(args)
 
         # Make the request based on the command
         response = getattr(client, command.lower())(args.url, **kwargs)
 
-        # Print response
-        print(f"Status Code: {response.status_code}")
-        print("\nHeaders:")
-        for key, value in response.headers.items():
-            print(f"{key}: {value}")
-
-        # Only print Response Body if there is content
-        if response.text.strip():
-            print("\nResponse Body:")
-            try:
-                json_data = json.loads(response.text)
-                pretty_response = json.dumps(json_data, indent=4)
-                print(pretty_response)
-            except ValueError:
-                print(response.text)
+        if not suppress_output:
+            _emit_response(response)
 
     except json.JSONDecodeError:
-        print("Error: Invalid JSON data")
-        print("Make sure your JSON data is properly formatted.")
-        print('Example: \'{"key": "value"}\'')
+        if not suppress_output:
+            print("Error: Invalid JSON data")
+            print("Make sure your JSON data is properly formatted.")
+            print('Example: \'{"key": "value"}\'')
+        sys.exit(1)
+    except ValueError as error:
+        if not suppress_output:
+            print(f"Error: {error}")
         sys.exit(1)
     except HTTPClientError as e:
-        print(f"Error: {str(e)}")
+        if not suppress_output:
+            print(f"Error: {str(e)}")
         sys.exit(1)

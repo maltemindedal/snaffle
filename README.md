@@ -35,7 +35,7 @@ automatic retries on failures, and a verbose mode for detailed logging.
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/Tyrowin/PyFetch.git
+git clone https://github.com/maltemindedal/PyFetch.git
 cd PyFetch
 ```
 

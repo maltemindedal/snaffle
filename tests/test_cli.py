@@ -1,18 +1,26 @@
-"""Test cases for the CLI module"""
+"""Test cases for the CLI module."""
 
 import io
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from PyFetch.cli import main, show_examples
 
 
 class TestCLI(unittest.TestCase):
-    """Test cases for the CLI module"""
+    """Test cases for the CLI module."""
 
-    @patch("sys.argv", ["http_cli", "HELP"])
+    @staticmethod
+    def _build_response(status_code=200, text="", headers=None):
+        return SimpleNamespace(
+            status_code=status_code,
+            text=text,
+            headers=headers or {"content-type": "text/plain"},
+        )
+
     def test_help_command(self):
-        """Test the HELP command content"""
+        """Test the HELP command content."""
         # Run help command with output suppressed
         help_text = show_examples(suppress_output=True)
         self.assertIn("Examples:", help_text)
@@ -20,45 +28,76 @@ class TestCLI(unittest.TestCase):
 
         # Verify main function with suppressed output
         with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-            main(suppress_output=True)
+            main(["HELP"], suppress_output=True)
             self.assertEqual("", fake_stdout.getvalue())
 
-    @patch("PyFetch.http_client.HTTPClient.get")
-    @patch("sys.argv", ["http_cli", "GET", "https://api.example.com"])
+    @patch("PyFetch.cli.HTTPClient.get")
     def test_get_command(self, mock_get):
-        """Test the GET command"""
-        mock_get.return_value.status_code = 200
-        mock_get.return_value.text = "Success"
+        """Test the GET command."""
+        mock_get.return_value = self._build_response(text="Success")
 
-        with patch("builtins.print") as mocked_print:
-            main()
-            mocked_print.assert_called_with("Success")
+        with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+            main(["GET", "https://api.example.com"])
 
-    @patch("PyFetch.http_client.HTTPClient.post")
-    @patch(
-        "sys.argv",
-        ["http_cli", "POST", "https://api.example.com", "-d", '{"key": "value"}'],
-    )
+        output = fake_stdout.getvalue()
+        self.assertIn("Status Code: 200", output)
+        self.assertIn("Headers:", output)
+        self.assertIn("Response Body:", output)
+        self.assertIn("Success", output)
+
+    @patch("PyFetch.cli.HTTPClient.post")
     def test_post_command(self, mock_post):
-        """Test the POST command"""
-        mock_post.return_value.status_code = 201
-        mock_post.return_value.text = "Created"
+        """Test the POST command."""
+        mock_post.return_value = self._build_response(
+            status_code=201,
+            text='{"created": true}',
+            headers={"content-type": "application/json"},
+        )
 
-        with patch("builtins.print") as mocked_print:
-            main()
-            mocked_print.assert_called_with("Created")
+        with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+            main(["POST", "https://api.example.com", "-d", '{"key": "value"}'])
 
-    @patch("PyFetch.http_client.HTTPClient.post")
-    @patch(
-        "sys.argv",
-        ["http_cli", "POST", "https://api.example.com", "--progress"],
-    )
+        output = fake_stdout.getvalue()
+        self.assertIn("Status Code: 201", output)
+        self.assertIn('"created": true', output)
+        mock_post.assert_called_once_with(
+            "https://api.example.com",
+            json={"key": "value"},
+        )
+
+    @patch("PyFetch.cli.HTTPClient.post")
     def test_progress_is_not_available_for_post(self, mock_post):
-        """Test that --progress is not available for POST command"""
+        """Test that --progress is not available for POST command."""
         mock_post.return_value.text = "{}"
         with self.assertRaises(SystemExit):
             with patch("sys.stderr", new_callable=io.StringIO):
-                main()
+                main(["POST", "https://api.example.com", "--progress"])
+
+    def test_invalid_header_value_exits_with_error(self):
+        """Test invalid header formatting returns a CLI error."""
+        with self.assertRaises(SystemExit):
+            with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+                main(["GET", "https://api.example.com", "-H", "Authorization"])
+
+        self.assertIn("Invalid header format", fake_stdout.getvalue())
+
+    def test_invalid_json_value_exits_with_error(self):
+        """Test invalid JSON data returns a CLI error."""
+        with self.assertRaises(SystemExit):
+            with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+                main(["POST", "https://api.example.com", "-d", "{not-json}"])
+
+        self.assertIn("Invalid JSON data", fake_stdout.getvalue())
+
+    @patch("PyFetch.cli.HTTPClient.get")
+    def test_suppress_output_hides_response_text(self, mock_get):
+        """Test suppress_output keeps stdout clean during command execution."""
+        mock_get.return_value = self._build_response(text="Success")
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+            main(["GET", "https://api.example.com"], suppress_output=True)
+
+        self.assertEqual("", fake_stdout.getvalue())
 
 
 if __name__ == "__main__":

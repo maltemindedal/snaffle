@@ -1,9 +1,11 @@
-"""HTTP client for making asynchronous HTTP requests with retries.
+"""HTTP client for making HTTP requests with retries.
 
 This module provides a flexible HTTP client for making RESTful API calls,
 with support for customizable timeouts, automatic retries on failures,
 and optional progress bars for large downloads.
 """
+
+from __future__ import annotations
 
 import requests
 from tqdm import tqdm
@@ -26,6 +28,12 @@ class HTTPClient:
         MIN_SIZE_FOR_PROGRESS (int): The minimum file size in bytes to trigger the progress bar.
     """
 
+    ALLOWED_METHODS = frozenset(
+        {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+    )
+    DOWNLOAD_CHUNK_SIZE = 8192
+    MIN_SIZE_FOR_PROGRESS = 5 * 1024 * 1024  # 5MB
+
     def __init__(self, timeout=30, retries=3, verbose=False, show_progress=False):
         """Initializes the HTTPClient with configuration options.
 
@@ -35,20 +43,26 @@ class HTTPClient:
             verbose (bool, optional): Whether to enable verbose logging. Defaults to False.
             show_progress (bool, optional): Whether to show a progress bar for large downloads. Defaults to False.
         """
+        if timeout <= 0:
+            raise ValueError("timeout must be greater than 0")
+        if retries <= 0:
+            raise ValueError("retries must be greater than 0")
+
         self.timeout = timeout
         self.retries = retries
         self.verbose = verbose
         self.show_progress = show_progress
-        self.allowed_methods = [
-            "GET",
-            "POST",
-            "PUT",
-            "PATCH",
-            "DELETE",
-            "HEAD",
-            "OPTIONS",
-        ]
-        self.MIN_SIZE_FOR_PROGRESS = 5 * 1024 * 1024  # 5MB
+        self.allowed_methods = self.ALLOWED_METHODS
+
+    def _validate_method(self, method):
+        """Normalizes and validates an HTTP method name."""
+        normalized_method = method.upper()
+        if normalized_method not in self.ALLOWED_METHODS:
+            allowed_methods = ", ".join(sorted(self.ALLOWED_METHODS))
+            raise ValueError(
+                f"Unsupported HTTP method. Allowed methods: {allowed_methods}"
+            )
+        return normalized_method
 
     def _create_progress_bar(self, total, desc):
         """Creates a `tqdm` progress bar if conditions are met.
@@ -86,19 +100,21 @@ class HTTPClient:
         Returns:
             bytes: The full response content as a byte string.
         """
-        chunk_size = 8192
-        content = b""
+        content = bytearray()
 
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            if chunk:
-                content += chunk
+        try:
+            for chunk in response.iter_content(chunk_size=self.DOWNLOAD_CHUNK_SIZE):
+                if not chunk:
+                    continue
+
+                content.extend(chunk)
                 if progress_bar:
                     progress_bar.update(len(chunk))
+        finally:
+            if progress_bar:
+                progress_bar.close()
 
-        if progress_bar:
-            progress_bar.close()
-
-        return content
+        return bytes(content)
 
     def make_request(self, method, url, **kwargs):
         """Makes an HTTP request with retry logic and error handling.
@@ -120,23 +136,20 @@ class HTTPClient:
             ResponseError: If an HTTP error status code is received after all retries.
             HTTPClientError: For other request-related errors.
         """
-        if method.upper() not in self.allowed_methods:
-            raise ValueError(
-                f"Unsupported HTTP method. Allowed methods: {', '.join(self.allowed_methods)}"
-            )
+        normalized_method = self._validate_method(method)
 
         # Ensure stream=True for GET requests to enable progress tracking
-        if method.upper() == "GET":
+        if normalized_method == "GET":
             kwargs["stream"] = True
 
         for attempt in range(self.retries):
             if self.verbose:
                 print(
-                    f"[VERBOSE] Attempt {attempt + 1} of {self.retries}: Sending {method} request to {url} with {kwargs}"
+                    f"[VERBOSE] Attempt {attempt + 1} of {self.retries}: Sending {normalized_method} request to {url} with {kwargs}"
                 )
             try:
                 response = requests.request(
-                    method=method, url=url, timeout=self.timeout, **kwargs
+                    method=normalized_method, url=url, timeout=self.timeout, **kwargs
                 )
                 response.raise_for_status()
 
@@ -146,7 +159,7 @@ class HTTPClient:
                     )
 
                 # Handle progress indication for GET requests
-                if method.upper() == "GET" and self.show_progress:
+                if normalized_method == "GET" and self.show_progress:
                     total = int(response.headers.get("content-length", 0))
                     progress_bar = self._create_progress_bar(
                         total, f"Downloading {url}"
