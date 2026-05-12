@@ -11,7 +11,7 @@ license = { file = "LICENSE" }
 authors = [{ name = "Malte Mindedal" }]
 requires-python = ">=3.10"
 classifiers = ["Programming Language :: Python :: 3", "Operating System :: OS Independent"]
-dependencies = ["requests>=2.33.1", "tqdm>=4.66.0", "urllib3>=2.6.3"]
+dependencies = ["requests>=2.33.1", "tqdm>=4.66.0", "urllib3>=2.7.0"]
 
 [project.scripts]
 pyfetch = "PyFetch.cli:main"
