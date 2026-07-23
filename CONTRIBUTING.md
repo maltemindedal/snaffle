@@ -1,5 +1,10 @@
 # Contributing to Snaffle
 
+Documentation lives in [`docs/`](docs/README.md); the
+[architecture overview](docs/architecture/overview.md) and the
+[decision records](docs/architecture/decisions/) explain why the code is shaped
+the way it is.
+
 ## Project layout
 
 ```
