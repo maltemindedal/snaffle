@@ -93,8 +93,8 @@ uv sync --extra speedups
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/maltemindedal/PyFetch.git
-cd PyFetch
+git clone https://github.com/maltemindedal/pyfetch.git
+cd pyfetch
 ```
 
 2. Sync the project dependencies:
@@ -109,6 +109,39 @@ uv sync --group dev
 uv run pyfetch HELP
 ```
 
+## Project Layout
+
+The package uses the [src-layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/)
+recommended by the PyPA, so tests exercise the installed distribution rather
+than whatever happens to sit in the working directory.
+
+```
+src/pyfetch/        The package (import name: `pyfetch`)
+  __init__.py       Public API; resolves HTTPClient lazily (PEP 562)
+  __main__.py       `python -m pyfetch` and the `pyfetch` console script
+  cli.py            Argument parsing and response rendering
+  http_client.py    HTTP client, session pooling, retry policy
+  exceptions.py     Exception hierarchy
+  py.typed          PEP 561 marker
+tests/              One module per source module: test_<module>.py
+```
+
+The package is fully typed and ships a `py.typed` marker, so downstream type
+checkers use its annotations without extra configuration.
+
+## Upgrading from 1.x
+
+The import package was renamed from `PyFetch` to `pyfetch` in 2.0.0 to follow
+PEP 8. The distribution name, the console script, and the built wheel were
+already lowercase, so only the import path changes:
+
+```python
+from PyFetch import HTTPClient  # 1.x
+from pyfetch import HTTPClient  # 2.0+
+```
+
+There is no compatibility shim. See [CHANGELOG.md](CHANGELOG.md) for the rest.
+
 ## Library Usage
 
 You can also use PyFetch as a library in your Python projects.
@@ -118,7 +151,7 @@ You can also use PyFetch as a library in your Python projects.
 First, import and create an instance of the `HTTPClient`:
 
 ```python
-from PyFetch import HTTPClient
+from pyfetch import HTTPClient
 
 client = HTTPClient(timeout=30, retries=3, verbose=False)
 ```
@@ -154,7 +187,7 @@ print(response.json())
 The client raises specific exceptions for different types of errors:
 
 ```python
-from PyFetch.exceptions import HTTPClientError, HTTPConnectionError
+from pyfetch.exceptions import HTTPClientError, HTTPConnectionError
 
 try:
     response = client.get("https://a-non-existent-domain.com")
@@ -252,7 +285,7 @@ Tests are organized in three main files:
 - `tests/test_http_client.py` - HTTP client functionality tests
 - `tests/test_exceptions.py` - Exception handling tests
 
-Typing is enforced with `mypy` in strict mode across both `PyFetch/` and `tests/`.
+Typing is enforced with `mypy` in strict mode across both `src/` and `tests/`.
 
 To add new tests:
 
