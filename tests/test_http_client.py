@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
+import threading
 import unittest
-from typing import Any, cast
+import weakref
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any, ClassVar, cast
 from unittest.mock import MagicMock, patch
 
 import requests
+from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
+from urllib3.util.retry import Retry
 
 from PyFetch.exceptions import HTTPConnectionError, ResponseError
 from PyFetch.http_client import HTTPClient
@@ -86,7 +93,8 @@ class TestHTTPClient(unittest.TestCase):
         mock_request.return_value = mock_response
 
         client = HTTPClient(show_progress=True)
-        response = client.get("https://api.example.com")
+        with contextlib.redirect_stderr(io.StringIO()):  # silence the progress bar
+            response = client.get("https://api.example.com")
 
         self.assertEqual(response.status_code, 200)
         mock_response.iter_content.assert_called_once()
@@ -123,7 +131,8 @@ class TestHTTPClient(unittest.TestCase):
         mock_request.return_value = mock_response
 
         client = HTTPClient(show_progress=True)
-        response = client.get("https://api.example.com")
+        with contextlib.redirect_stderr(io.StringIO()):  # silence the progress bar
+            response = client.get("https://api.example.com")
 
         self.assertEqual(response.status_code, 200)
         mock_response.iter_content.assert_called_once()
@@ -140,7 +149,8 @@ class TestHTTPClient(unittest.TestCase):
         mock_request.return_value = mock_response
 
         client = HTTPClient(show_progress=True)
-        response = client.get("https://api.example.com")
+        with contextlib.redirect_stderr(io.StringIO()):  # silence the progress bar
+            response = client.get("https://api.example.com")
 
         self.assertEqual(response.status_code, 200)
         mock_response.iter_content.assert_called_once()
@@ -228,6 +238,143 @@ class TestSessionReuse(unittest.TestCase):
                 self.assertIs(entered, client)
                 mock_close.assert_not_called()
             mock_close.assert_called_once()
+
+    def test_client_stays_an_ordinary_object(self) -> None:
+        """Test the client is still weak-referenceable and accepts attributes.
+
+        An earlier revision added `__slots__` for a saving too small to measure
+        and silently broke both of these for library users.
+        """
+        client = HTTPClient()
+        weakref.ref(client)
+        client.custom_attribute = "allowed"  # type: ignore[attr-defined]
+        client.close()
+
+
+class TestRetryPolicy(unittest.TestCase):
+    """Retry behaviour exercised against the real urllib3 machinery.
+
+    These deliberately avoid mocking `Session.request`: that mock sits above the
+    adapter, so it cannot observe retries at all. An earlier revision claimed
+    "a POST is never silently re-sent" on the strength of such a mock, and the
+    claim was wrong -- urllib3 filters read errors and statuses by method, but
+    retries connection errors for every method.
+    """
+
+    @staticmethod
+    def _retry(total: int = 3) -> Retry:
+        adapter = cast(
+            Any, HTTPClient(retries=total + 1).session.get_adapter("http://x")
+        )
+        return cast(Retry, adapter.max_retries)
+
+    def test_connection_errors_retry_for_non_idempotent_methods(self) -> None:
+        """Test a POST is retried on connect failure: nothing reached the server."""
+        retry = self._retry()
+        # Does not raise -> the attempt is retried.
+        retry.increment(method="POST", error=ConnectTimeoutError())
+
+    @staticmethod
+    def _read_error() -> ReadTimeoutError:
+        return ReadTimeoutError(cast(Any, None), "/", "read timed out")
+
+    def test_read_errors_do_not_retry_for_non_idempotent_methods(self) -> None:
+        """Test a POST is not replayed after a read failure: it may have landed."""
+        retry = self._retry()
+        # urllib3 re-raises the original error rather than retrying.
+        with self.assertRaises(ReadTimeoutError):
+            retry.increment(method="POST", error=self._read_error())
+
+    def test_read_errors_retry_for_idempotent_methods(self) -> None:
+        """Test a GET is retried after a read failure."""
+        retry = self._retry()
+        retry.increment(method="GET", error=self._read_error())
+
+    def test_retryable_status_is_retried_only_for_idempotent_methods(self) -> None:
+        """Test the 503 allowlist applies to GET but not to POST."""
+        retry = self._retry()
+        self.assertTrue(retry.is_retry("GET", 503))
+        self.assertFalse(retry.is_retry("POST", 503))
+
+    def test_dead_end_status_is_never_retried(self) -> None:
+        """Test a 404 is not retried for any method."""
+        retry = self._retry()
+        self.assertFalse(retry.is_retry("GET", 404))
+        self.assertFalse(retry.is_retry("POST", 404))
+
+
+class TestRetryAgainstRealServer(unittest.TestCase):
+    """End-to-end retry behaviour against a real socket, counting real requests."""
+
+    server: ClassVar[ThreadingHTTPServer]
+    base_url: ClassVar[str]
+    hits: ClassVar[list[str]] = []
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        hits = cls.hits
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args: Any) -> None:
+                pass
+
+            def _reply(self) -> None:
+                hits.append(f"{self.command} {self.path}")
+                code = 503 if self.path == "/flaky" else 404
+                body = b"{}"
+                self.send_response(code)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            do_GET = _reply
+            do_POST = _reply
+
+        class Server(ThreadingHTTPServer):
+            def handle_error(self, *args: Any) -> None:
+                pass
+
+        cls.server = Server(("127.0.0.1", 0), Handler)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def setUp(self) -> None:
+        self.hits.clear()
+
+    def test_get_on_503_is_retried(self) -> None:
+        """Test a transient status really is re-sent for an idempotent method."""
+        with HTTPClient(retries=3) as client, self.assertRaises(ResponseError):
+            client.get(f"{self.base_url}/flaky")
+        self.assertEqual(len(self.hits), 3, self.hits)
+
+    def test_post_on_503_is_not_retried(self) -> None:
+        """Test a transient status is not replayed for a non-idempotent method."""
+        with HTTPClient(retries=3) as client, self.assertRaises(ResponseError):
+            client.post(f"{self.base_url}/flaky", json={"a": 1})
+        self.assertEqual(len(self.hits), 1, self.hits)
+
+    def test_404_is_requested_once(self) -> None:
+        """Test a dead-end status costs exactly one round trip."""
+        with HTTPClient(retries=3) as client, self.assertRaises(ResponseError):
+            client.get(f"{self.base_url}/missing")
+        self.assertEqual(len(self.hits), 1, self.hits)
+
+    def test_connection_is_reused_across_requests(self) -> None:
+        """Test the pooled session survives across calls to the same host."""
+        with HTTPClient(retries=1) as client:
+            pool = client.session.get_adapter(self.base_url)
+            for _ in range(4):
+                with self.assertRaises(ResponseError):
+                    client.get(f"{self.base_url}/missing")
+            self.assertIs(client.session.get_adapter(self.base_url), pool)
+        self.assertEqual(len(self.hits), 4)
 
 
 if __name__ == "__main__":

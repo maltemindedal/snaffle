@@ -15,7 +15,7 @@ import json
 import sys
 import textwrap
 from collections.abc import Sequence
-from typing import Any, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 from PyFetch.exceptions import HTTPClientError
 
@@ -65,19 +65,25 @@ EXAMPLES = textwrap.dedent(
      """
 )
 
-#: Each supported method, plus whether it accepts a JSON body or a progress bar.
-COMMANDS: tuple[tuple[str, bool, bool], ...] = (
-    # (method, accepts --data, accepts --progress)
-    ("GET", False, True),
-    ("POST", True, False),
-    ("PUT", True, False),
-    ("PATCH", True, False),
-    ("DELETE", False, False),
-    ("HEAD", False, False),
-    ("OPTIONS", False, False),
-)
 
-DATA_HELP = 'R|JSON data for request body.\nExample: \'{"key": "value"}\''
+class Command(NamedTuple):
+    """A supported HTTP method and the optional arguments its subcommand takes."""
+
+    method: str
+    #: Example body shown in `-d/--data` help; None means the method takes no body.
+    data_example: str | None = None
+    accepts_progress: bool = False
+
+
+COMMANDS: tuple[Command, ...] = (
+    Command("GET", accepts_progress=True),
+    Command("POST", data_example='{"key": "value"}'),
+    Command("PUT", data_example='{"name": "New Name"}'),
+    Command("PATCH", data_example='{"email": "user@example.com"}'),
+    Command("DELETE"),
+    Command("HEAD"),
+    Command("OPTIONS"),
+)
 
 
 def show_examples(suppress_output: bool = False) -> str:
@@ -209,7 +215,8 @@ def create_parser() -> argparse.ArgumentParser:
         "HELP", help="Show detailed help and examples", aliases=["help"]
     )
 
-    for method, accepts_data, accepts_progress in COMMANDS:
+    for command in COMMANDS:
+        method = command.method
         article = "an" if method == "OPTIONS" else "a"
         sub = subparsers.add_parser(
             method,
@@ -217,9 +224,13 @@ def create_parser() -> argparse.ArgumentParser:
             aliases=[method.lower()],
         )
         add_common_arguments(sub)
-        if accepts_data:
-            sub.add_argument("-d", "--data", help=DATA_HELP)
-        if accepts_progress:
+        if command.data_example is not None:
+            sub.add_argument(
+                "-d",
+                "--data",
+                help=f"R|JSON data for request body.\nExample: '{command.data_example}'",
+            )
+        if command.accepts_progress:
             sub.add_argument(
                 "--progress",
                 action="store_true",
@@ -258,18 +269,7 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
 
     try:
         kwargs = _parse_request_kwargs(args)
-    except json.JSONDecodeError:
-        if not suppress_output:
-            print("Error: Invalid JSON data")
-            print("Make sure your JSON data is properly formatted.")
-            print('Example: \'{"key": "value"}\'')
-        sys.exit(1)
-    except ValueError as error:
-        if not suppress_output:
-            print(f"Error: {error}")
-        sys.exit(1)
 
-    try:
         with HTTPClient(
             timeout=args.timeout,
             verbose=args.verbose,
@@ -279,11 +279,15 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
 
             if not suppress_output:
                 _emit_response(response)
-    except ValueError as error:
+
+    except json.JSONDecodeError:
+        if not suppress_output:
+            print("Error: Invalid JSON data")
+            print("Make sure your JSON data is properly formatted.")
+            print('Example: \'{"key": "value"}\'')
+        sys.exit(1)
+    except (ValueError, HTTPClientError) as error:
+        # json.JSONDecodeError is a ValueError, so it must be caught above this.
         if not suppress_output:
             print(f"Error: {error}")
-        sys.exit(1)
-    except HTTPClientError as e:
-        if not suppress_output:
-            print(f"Error: {e!s}")
         sys.exit(1)
