@@ -14,6 +14,8 @@ automatic retries on failures, and a verbose mode for detailed logging.
 - JSON data handling for POST requests
 - Optional progress bars for large file downloads (>5MB)
 - Customizable timeout settings and automatic retries on failures
+- Connection pooling: repeated requests to a host reuse the TCP/TLS connection
+- Fast start-up: the HTTP stack is imported only when a request is actually made
 - Verbose mode for debugging: logs requests and responses
 - Detailed response output
   - Status code
@@ -21,6 +23,40 @@ automatic retries on failures, and a verbose mode for detailed logging.
   - Response body (pretty-printed if JSON)
 - Comprehensive error handling
 - Built-in help system
+
+## Performance
+
+The client keeps a pooled `requests.Session` alive for its lifetime, so a second
+request to the same host skips the TCP and TLS handshake entirely. Measured
+against `https://example.com` (median of 6 requests) and a local server:
+
+| Scenario                                | Before   | After   |
+| --------------------------------------- | -------- | ------- |
+| Repeat HTTPS request to the same host   | 24.4 ms  | 6.7 ms  |
+| 100 sequential local GETs (per request) | 1.47 ms  | 0.56 ms |
+| New TCP connections per 200 requests    | 200      | 0       |
+| Request returning a 404                 | 4.78 ms  | 0.57 ms |
+| CLI start-up (`pyfetch HELP`)           | 238 ms   | 77 ms   |
+
+Two behaviours changed to get there, both of which are also more correct:
+
+- **Retries are now selective.** Only connection failures and transient statuses
+  (408, 425, 429, 500, 502, 503, 504) are retried, with exponential backoff and
+  respect for `Retry-After`. Previously every failure was retried three times, so
+  a 404 cost three round trips to reach the same answer. As urllib3 does by
+  default, retries apply to idempotent methods only, so a `POST` is never
+  silently sent twice.
+- **`GET` no longer streams unless `--progress` is used.** Streaming a body that
+  nothing consumes held a connection open per request.
+
+### Optional transfer compression
+
+Installing the `speedups` extra lets urllib3 negotiate Zstandard and Brotli, so
+large text and JSON responses arrive materially smaller:
+
+```bash
+uv sync --extra speedups
+```
 
 ## Installation
 
@@ -59,9 +95,20 @@ You can also use PyFetch as a library in your Python projects.
 First, import and create an instance of the `HTTPClient`:
 
 ```python
-from PyFetch.http_client import HTTPClient
+from PyFetch import HTTPClient
 
 client = HTTPClient(timeout=30, retries=3, verbose=False)
+```
+
+Each client owns a pooled connection. Use it as a context manager (or call
+`client.close()`) so the pool is released when you are done, and keep one client
+for a batch of requests rather than creating one per call:
+
+```python
+with HTTPClient() as client:
+    for page in range(10):
+        # Every iteration after the first reuses the open connection.
+        client.get(f"https://httpbin.org/get?page={page}")
 ```
 
 ### Making Requests

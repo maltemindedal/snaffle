@@ -4,6 +4,11 @@ This package provides the `HTTPClient` for making HTTP requests and custom
 exceptions for handling errors. It is designed to be used both as a
 command-line tool and as a library in other Python applications.
 
+`HTTPClient` is resolved lazily (PEP 562) so that importing this package -- or
+running the CLI's help paths -- does not pull in `requests`, which costs well
+over 100 ms of interpreter start-up on its own. `from PyFetch import HTTPClient`
+keeps working exactly as before and imports the stack on first access.
+
 Public API:
     - `HTTPClient`: The main client for making HTTP requests.
     - `HTTPClientError`: Base exception for client errors.
@@ -11,8 +16,12 @@ Public API:
     - `ResponseError`: Exception for bad HTTP responses.
 """
 
+from typing import TYPE_CHECKING, Any
+
 from PyFetch.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
-from PyFetch.http_client import HTTPClient
+
+if TYPE_CHECKING:
+    from PyFetch.http_client import HTTPClient
 
 __version__ = "1.0.0"
 
@@ -23,3 +32,12 @@ __all__ = [
     "ResponseError",
     "__version__",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    """Resolves `HTTPClient` on first access, deferring the `requests` import."""
+    if name == "HTTPClient":
+        from PyFetch.http_client import HTTPClient
+
+        return HTTPClient
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
