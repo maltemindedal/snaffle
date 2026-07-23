@@ -14,6 +14,8 @@ automatic retries on failures, and a verbose mode for detailed logging.
 - JSON data handling for POST requests
 - Optional progress bars for large file downloads (>5MB)
 - Customizable timeout settings and automatic retries on failures
+- Connection pooling: repeated requests to a host reuse the TCP/TLS connection
+- Fast start-up: the HTTP stack is imported only when a request is actually made
 - Verbose mode for debugging: logs requests and responses
 - Detailed response output
   - Status code
@@ -21,6 +23,63 @@ automatic retries on failures, and a verbose mode for detailed logging.
   - Response body (pretty-printed if JSON)
 - Comprehensive error handling
 - Built-in help system
+
+## Performance
+
+The client keeps a pooled `requests.Session` alive for its lifetime, so a second
+request to the same host skips the TCP and TLS handshake entirely. Measured
+against `https://example.com` (median of 6 requests) and a local server:
+
+| Scenario                                | Before  | After   |
+| --------------------------------------- | ------- | ------- |
+| Repeat HTTPS request to the same host   | 24.5 ms | 6.2 ms  |
+| 100 sequential local GETs (per request) | 1.47 ms | 0.57 ms |
+| TCP connections opened per 200 requests | 200     | 1       |
+| Request returning a 404                 | 4.78 ms | 0.60 ms |
+| CLI start-up (`pyfetch HELP`)           | 238 ms  | 80 ms   |
+
+Behaviours that changed to get there:
+
+- **Retries are now selective.** Only connection failures and transient statuses
+  (408, 425, 429, 500, 502, 503, 504) are retried. Previously every failure was
+  retried three times, so a 404 cost three round trips to reach the same answer.
+- **`GET` no longer streams unless `--progress` is used.** Streaming a body that
+  nothing consumes held a connection open per request. A caller who passes
+  `stream=True` explicitly still gets an unconsumed response to iterate.
+- **A client now owns a connection and should be closed.** Use it as a context
+  manager or call `close()`. Code that created a client per request will hold
+  sockets open until garbage collection.
+- **`DOWNLOAD_CHUNK_SIZE` rose from 8 KiB to 64 KiB**, which affects the working
+  set while a `--progress` download is in flight.
+
+### What is and isn't retried
+
+urllib3 applies its idempotent-method filter to read errors and to retryable
+statuses, but **not** to connection errors. That asymmetry is deliberate, and
+PyFetch keeps it:
+
+| Failure                              | `GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS` | `POST`, `PATCH` |
+| ------------------------------------ | ----------------------------------------- | --------------- |
+| Connection never established         | retried                                   | **retried**     |
+| Read failure after the request landed| retried                                   | not retried     |
+| Retryable status (429, 503, ...)     | retried                                   | not retried     |
+
+A request that never reached the server cannot have been acted on twice, so
+retrying it is safe for any method. Once the request is on the wire, a `POST`
+may already have been processed, so it is never replayed.
+
+Retries use exponential backoff and honour `Retry-After`. The trade-off is that
+a request destined to fail takes about half a second longer across the default
+three attempts than an immediate-retry loop would.
+
+### Optional transfer compression
+
+Installing the `speedups` extra lets urllib3 negotiate Zstandard and Brotli, so
+large text and JSON responses arrive materially smaller:
+
+```bash
+uv sync --extra speedups
+```
 
 ## Installation
 
@@ -59,9 +118,20 @@ You can also use PyFetch as a library in your Python projects.
 First, import and create an instance of the `HTTPClient`:
 
 ```python
-from PyFetch.http_client import HTTPClient
+from PyFetch import HTTPClient
 
 client = HTTPClient(timeout=30, retries=3, verbose=False)
+```
+
+Each client owns a pooled connection. Use it as a context manager (or call
+`client.close()`) so the pool is released when you are done, and keep one client
+for a batch of requests rather than creating one per call:
+
+```python
+with HTTPClient() as client:
+    for page in range(10):
+        # Every iteration after the first reuses the open connection.
+        client.get(f"https://httpbin.org/get?page={page}")
 ```
 
 ### Making Requests

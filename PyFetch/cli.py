@@ -3,6 +3,9 @@
 This module provides a command-line interface (CLI) for making HTTP requests
 using the PyFetch HTTP client. It supports common HTTP methods, custom headers,
 JSON data, and other features.
+
+The HTTP client (and with it ``requests``) is imported lazily so that ``--help``,
+``HELP`` and argument errors do not pay for the network stack they never use.
 """
 
 from __future__ import annotations
@@ -12,10 +15,9 @@ import json
 import sys
 import textwrap
 from collections.abc import Sequence
-from typing import Any, TypedDict
+from typing import Any, NamedTuple, TypedDict
 
 from PyFetch.exceptions import HTTPClientError
-from PyFetch.http_client import HTTPClient
 
 
 class RequestKwargs(TypedDict, total=False):
@@ -64,6 +66,26 @@ EXAMPLES = textwrap.dedent(
 )
 
 
+class Command(NamedTuple):
+    """A supported HTTP method and the optional arguments its subcommand takes."""
+
+    method: str
+    #: Example body shown in `-d/--data` help; None means the method takes no body.
+    data_example: str | None = None
+    accepts_progress: bool = False
+
+
+COMMANDS: tuple[Command, ...] = (
+    Command("GET", accepts_progress=True),
+    Command("POST", data_example='{"key": "value"}'),
+    Command("PUT", data_example='{"name": "New Name"}'),
+    Command("PATCH", data_example='{"email": "user@example.com"}'),
+    Command("DELETE"),
+    Command("HEAD"),
+    Command("OPTIONS"),
+)
+
+
 def show_examples(suppress_output: bool = False) -> str:
     """Prints usage examples for the PyFetch CLI.
 
@@ -101,8 +123,9 @@ def _parse_request_kwargs(args: argparse.Namespace) -> RequestKwargs:
     """Builds keyword arguments for the HTTP client call."""
     kwargs: RequestKwargs = {}
 
-    if hasattr(args, "data") and args.data:
-        kwargs["json"] = json.loads(args.data)
+    data = getattr(args, "data", None)
+    if data:
+        kwargs["json"] = json.loads(data)
 
     headers = _parse_headers(getattr(args, "header", None))
     if headers:
@@ -112,22 +135,20 @@ def _parse_request_kwargs(args: argparse.Namespace) -> RequestKwargs:
 
 
 def _emit_response(response: Any) -> None:
-    """Prints a formatted HTTP response."""
-    print(f"Status Code: {response.status_code}")
-    print("\nHeaders:")
-    for key, value in response.headers.items():
-        print(f"{key}: {value}")
+    """Prints a formatted HTTP response using a single buffered write."""
+    parts = [f"Status Code: {response.status_code}\n", "\nHeaders:\n"]
+    parts.extend(f"{key}: {value}\n" for key, value in response.headers.items())
 
-    body = response.text.strip()
-    if not body:
-        return
+    text = response.text
+    if text.strip():
+        parts.append("\nResponse Body:\n")
+        try:
+            parts.append(json.dumps(json.loads(text), indent=4))
+        except ValueError:
+            parts.append(text)
+        parts.append("\n")
 
-    print("\nResponse Body:")
-    try:
-        json_data = json.loads(response.text)
-        print(json.dumps(json_data, indent=4))
-    except ValueError:
-        print(response.text)
+    sys.stdout.write("".join(parts))
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -161,6 +182,19 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+class CustomFormatter(argparse.HelpFormatter):
+    """Custom help formatter to support multi-line help messages.
+
+    This formatter allows help text to be split into multiple lines
+    by prefixing it with "R|".
+    """
+
+    def _split_lines(self, text: str, width: int) -> list[str]:
+        if text.startswith("R|"):
+            return text[2:].splitlines()
+        return super()._split_lines(text, width)
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Creates and configures the argument parser for the CLI.
 
@@ -170,19 +204,6 @@ def create_parser() -> argparse.ArgumentParser:
     Returns:
         argparse.ArgumentParser: The configured argument parser.
     """
-
-    class CustomFormatter(argparse.HelpFormatter):
-        """Custom help formatter to support multi-line help messages.
-
-        This formatter allows help text to be split into multiple lines
-        by prefixing it with "R|".
-        """
-
-        def _split_lines(self, text: str, width: int) -> list[str]:
-            if text.startswith("R|"):
-                return text[2:].splitlines()
-            return super()._split_lines(text, width)
-
     parser = argparse.ArgumentParser(
         description="HTTP CLI client supporting GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS methods",
         formatter_class=CustomFormatter,
@@ -190,73 +211,31 @@ def create_parser() -> argparse.ArgumentParser:
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
-
-    # HELP command
     subparsers.add_parser(
         "HELP", help="Show detailed help and examples", aliases=["help"]
     )
 
-    # GET command
-    get_parser = subparsers.add_parser(
-        "GET", help="Make a GET request", aliases=["get"]
-    )
-    add_common_arguments(get_parser)
-    get_parser.add_argument(
-        "--progress",
-        action="store_true",
-        help="Show progress bar for downloads larger than 5MB",
-    )
-
-    # POST command
-    post_parser = subparsers.add_parser(
-        "POST", help="Make a POST request", aliases=["post"]
-    )
-    add_common_arguments(post_parser)
-    post_parser.add_argument(
-        "-d",
-        "--data",
-        help='R|JSON data for request body.\nExample: \'{"key": "value"}\'',
-    )
-
-    # PUT command
-    put_parser = subparsers.add_parser(
-        "PUT", help="Make a PUT request", aliases=["put"]
-    )
-    add_common_arguments(put_parser)
-    put_parser.add_argument(
-        "-d",
-        "--data",
-        help='R|JSON data for request body.\nExample: \'{"key": "value"}\'',
-    )
-
-    # PATCH command
-    patch_parser = subparsers.add_parser(
-        "PATCH", help="Make a PATCH request", aliases=["patch"]
-    )
-    add_common_arguments(patch_parser)
-    patch_parser.add_argument(
-        "-d",
-        "--data",
-        help='R|JSON data for request body.\nExample: \'{"email": "user@example.com"}\'',
-    )
-
-    # DELETE command
-    delete_parser = subparsers.add_parser(
-        "DELETE", help="Make a DELETE request", aliases=["delete"]
-    )
-    add_common_arguments(delete_parser)
-
-    # HEAD command
-    head_parser = subparsers.add_parser(
-        "HEAD", help="Make a HEAD request", aliases=["head"]
-    )
-    add_common_arguments(head_parser)
-
-    # OPTIONS command
-    options_parser = subparsers.add_parser(
-        "OPTIONS", help="Make an OPTIONS request", aliases=["options"]
-    )
-    add_common_arguments(options_parser)
+    for command in COMMANDS:
+        method = command.method
+        article = "an" if method == "OPTIONS" else "a"
+        sub = subparsers.add_parser(
+            method,
+            help=f"Make {article} {method} request",
+            aliases=[method.lower()],
+        )
+        add_common_arguments(sub)
+        if command.data_example is not None:
+            sub.add_argument(
+                "-d",
+                "--data",
+                help=f"R|JSON data for request body.\nExample: '{command.data_example}'",
+            )
+        if command.accepts_progress:
+            sub.add_argument(
+                "--progress",
+                action="store_true",
+                help="Show progress bar for downloads larger than 5MB",
+            )
 
     return parser
 
@@ -269,6 +248,7 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
     and error reporting.
 
     Args:
+        argv (Sequence[str], optional): Arguments to parse. Defaults to ``sys.argv``.
         suppress_output (bool, optional): If True, suppresses all output to the
             console, which is useful for testing. Defaults to False.
     """
@@ -284,20 +264,21 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
         show_examples(suppress_output)
         return
 
-    client = HTTPClient(
-        timeout=args.timeout,
-        verbose=args.verbose,
-        show_progress=args.progress if hasattr(args, "progress") else False,
-    )
+    # Deferred so the help paths above never import the HTTP stack.
+    from PyFetch.http_client import HTTPClient
 
     try:
         kwargs = _parse_request_kwargs(args)
 
-        # Make the request based on the command
-        response = getattr(client, command.lower())(args.url, **kwargs)
+        with HTTPClient(
+            timeout=args.timeout,
+            verbose=args.verbose,
+            show_progress=getattr(args, "progress", False),
+        ) as client:
+            response = getattr(client, command.lower())(args.url, **kwargs)
 
-        if not suppress_output:
-            _emit_response(response)
+            if not suppress_output:
+                _emit_response(response)
 
     except json.JSONDecodeError:
         if not suppress_output:
@@ -305,11 +286,8 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
             print("Make sure your JSON data is properly formatted.")
             print('Example: \'{"key": "value"}\'')
         sys.exit(1)
-    except ValueError as error:
+    except (ValueError, HTTPClientError) as error:
+        # json.JSONDecodeError is a ValueError, so it must be caught above this.
         if not suppress_output:
             print(f"Error: {error}")
-        sys.exit(1)
-    except HTTPClientError as e:
-        if not suppress_output:
-            print(f"Error: {str(e)}")
         sys.exit(1)

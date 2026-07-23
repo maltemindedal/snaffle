@@ -1,17 +1,31 @@
 [build-system]
-requires = ["setuptools>=61,<77"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "PyFetch"
-version = "1.0.0"
+version = "1.1.0"
 description = "A simple HTTP CLI client"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 authors = [{ name = "Malte Mindedal" }]
 requires-python = ">=3.10"
-classifiers = ["Programming Language :: Python :: 3", "Operating System :: OS Independent"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: OS Independent",
+]
 dependencies = ["requests>=2.33.1", "tqdm>=4.66.0", "urllib3>=2.7.0"]
+
+[project.optional-dependencies]
+# urllib3 negotiates these content encodings automatically once the codecs are
+# installed, so large text/JSON responses arrive materially smaller.
+speedups = ["zstandard>=0.23", "brotli>=1.1"]
 
 [project.scripts]
 pyfetch = "PyFetch.cli:main"
@@ -36,7 +50,7 @@ target-version = "py310"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP"]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PERF"]
 ignore = ["E501"]
 
 [tool.ruff.format]
