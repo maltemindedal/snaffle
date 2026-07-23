@@ -30,24 +30,47 @@ The client keeps a pooled `requests.Session` alive for its lifetime, so a second
 request to the same host skips the TCP and TLS handshake entirely. Measured
 against `https://example.com` (median of 6 requests) and a local server:
 
-| Scenario                                | Before   | After   |
-| --------------------------------------- | -------- | ------- |
-| Repeat HTTPS request to the same host   | 24.4 ms  | 6.7 ms  |
-| 100 sequential local GETs (per request) | 1.47 ms  | 0.56 ms |
-| New TCP connections per 200 requests    | 200      | 0       |
-| Request returning a 404                 | 4.78 ms  | 0.57 ms |
-| CLI start-up (`pyfetch HELP`)           | 238 ms   | 77 ms   |
+| Scenario                                | Before  | After   |
+| --------------------------------------- | ------- | ------- |
+| Repeat HTTPS request to the same host   | 24.5 ms | 6.2 ms  |
+| 100 sequential local GETs (per request) | 1.47 ms | 0.57 ms |
+| TCP connections opened per 200 requests | 200     | 1       |
+| Request returning a 404                 | 4.78 ms | 0.60 ms |
+| CLI start-up (`pyfetch HELP`)           | 238 ms  | 80 ms   |
 
-Two behaviours changed to get there, both of which are also more correct:
+Behaviours that changed to get there:
 
 - **Retries are now selective.** Only connection failures and transient statuses
-  (408, 425, 429, 500, 502, 503, 504) are retried, with exponential backoff and
-  respect for `Retry-After`. Previously every failure was retried three times, so
-  a 404 cost three round trips to reach the same answer. As urllib3 does by
-  default, retries apply to idempotent methods only, so a `POST` is never
-  silently sent twice.
+  (408, 425, 429, 500, 502, 503, 504) are retried. Previously every failure was
+  retried three times, so a 404 cost three round trips to reach the same answer.
 - **`GET` no longer streams unless `--progress` is used.** Streaming a body that
-  nothing consumes held a connection open per request.
+  nothing consumes held a connection open per request. A caller who passes
+  `stream=True` explicitly still gets an unconsumed response to iterate.
+- **A client now owns a connection and should be closed.** Use it as a context
+  manager or call `close()`. Code that created a client per request will hold
+  sockets open until garbage collection.
+- **`DOWNLOAD_CHUNK_SIZE` rose from 8 KiB to 64 KiB**, which affects the working
+  set while a `--progress` download is in flight.
+
+### What is and isn't retried
+
+urllib3 applies its idempotent-method filter to read errors and to retryable
+statuses, but **not** to connection errors. That asymmetry is deliberate, and
+PyFetch keeps it:
+
+| Failure                              | `GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS` | `POST`, `PATCH` |
+| ------------------------------------ | ----------------------------------------- | --------------- |
+| Connection never established         | retried                                   | **retried**     |
+| Read failure after the request landed| retried                                   | not retried     |
+| Retryable status (429, 503, ...)     | retried                                   | not retried     |
+
+A request that never reached the server cannot have been acted on twice, so
+retrying it is safe for any method. Once the request is on the wire, a `POST`
+may already have been processed, so it is never replayed.
+
+Retries use exponential backoff and honour `Retry-After`. The trade-off is that
+a request destined to fail takes about half a second longer across the default
+three attempts than an immediate-retry loop would.
 
 ### Optional transfer compression
 

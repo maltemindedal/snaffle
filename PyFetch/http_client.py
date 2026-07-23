@@ -37,11 +37,24 @@ class HTTPClient:
     This client supports common HTTP methods (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS)
     and includes features like configurable timeouts, retries, and verbose logging.
 
-    Connections are pooled across requests. Use the client as a context manager,
-    or call :meth:`close`, to release the pool when you are done with it::
+    Connections are pooled across requests, so a client owns an operating-system
+    resource. Use it as a context manager, or call :meth:`close`, to release the
+    pool when you are done with it::
 
         with HTTPClient() as client:
             client.get("https://example.com")
+
+    Retries use exponential backoff and are applied to:
+
+    * connection failures, for every method -- a request that never reached the
+      server cannot have been acted on twice;
+    * read failures and the statuses in :attr:`RETRY_STATUSES`, for idempotent
+      methods only, so a ``POST`` that may already have been processed is never
+      replayed.
+
+    The backoff means a request that is going to fail takes longer to say so
+    (roughly half a second extra across the default three attempts) in exchange
+    for not hammering a server that is already struggling.
 
     Attributes:
         timeout (int): The request timeout in seconds.
@@ -55,21 +68,14 @@ class HTTPClient:
     ALLOWED_METHODS = frozenset(
         {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
     )
+    #: Raised from 8 KiB: larger reads mean fewer syscalls and fewer progress-bar
+    #: refreshes per megabyte.
     DOWNLOAD_CHUNK_SIZE = 65536
     MIN_SIZE_FOR_PROGRESS = 5 * 1024 * 1024  # 5MB
     #: Status codes worth retrying. Retrying anything else (a 404, a 401) only
     #: multiplies the latency of a request that was never going to succeed.
     RETRY_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504})
     POOL_SIZE = 16
-
-    __slots__ = (
-        "allowed_methods",
-        "retries",
-        "session",
-        "show_progress",
-        "timeout",
-        "verbose",
-    )
 
     def __init__(
         self,
@@ -100,7 +106,13 @@ class HTTPClient:
 
     @classmethod
     def _build_session(cls, retries: int) -> requests.Session:
-        """Builds a session whose adapters pool connections and retry with backoff."""
+        """Builds a session whose adapters pool connections and retry with backoff.
+
+        urllib3 applies its idempotent-method filter to read errors and to
+        retryable statuses, but not to connection errors -- a request that never
+        left the machine cannot have been processed twice, so retrying it is safe
+        for every method. That asymmetry is deliberate; see the class docstring.
+        """
         # `retries` counts total attempts; urllib3 counts retries after the first.
         retry = Retry(
             total=retries - 1,
@@ -207,9 +219,8 @@ class HTTPClient:
         """Makes an HTTP request with retry logic and error handling.
 
         This is the core method for all HTTP operations performed by the client.
-        Retries with exponential backoff are handled by the session's adapter and
-        apply to connection failures and transient status codes
-        (see :attr:`RETRY_STATUSES`) on idempotent methods.
+        Retries with exponential backoff are handled by the session's adapter;
+        see the class docstring for which failures are retried for which methods.
 
         Args:
             method (str): The HTTP method to use (e.g., 'GET', 'POST').
@@ -228,11 +239,12 @@ class HTTPClient:
         normalized_method = self._validate_method(method)
         verbose = self.verbose
 
-        # Streaming is only useful when we intend to report progress; otherwise
-        # letting requests read the body in one pass is faster and returns the
-        # connection to the pool immediately.
-        streaming = normalized_method == "GET" and self.show_progress
-        if streaming:
+        # We only stream on our own initiative when there is a progress bar to
+        # feed; otherwise letting requests read the body in one pass is faster
+        # and returns the connection to the pool immediately. A caller who asked
+        # for `stream=True` still gets an unconsumed response to iterate itself.
+        track_progress = normalized_method == "GET" and self.show_progress
+        if track_progress:
             kwargs["stream"] = True
 
         if verbose:
@@ -251,7 +263,7 @@ class HTTPClient:
                     f"[VERBOSE] Received response with status {response.status_code} and headers {response.headers}"
                 )
 
-            if streaming:
+            if track_progress:
                 total = int(response.headers.get("content-length", 0))
                 progress_bar = self._create_progress_bar(total, f"Downloading {url}")
                 response._content = self._stream_response(response, progress_bar)

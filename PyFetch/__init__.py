@@ -23,7 +23,7 @@ from PyFetch.exceptions import HTTPClientError, HTTPConnectionError, ResponseErr
 if TYPE_CHECKING:
     from PyFetch.http_client import HTTPClient
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = [
     "HTTPClient",
