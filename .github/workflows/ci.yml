@@ -54,7 +54,7 @@ jobs:
 
           wheel = sorted(glob.glob("dist/*.whl"))[-1]
           names = zipfile.ZipFile(wheel).namelist()
-          if "pyfetch/py.typed" not in names:
+          if "snaffle/py.typed" not in names:
               sys.exit(f"py.typed missing from {wheel}: {names}")
           print(f"{wheel} ships py.typed")
           PY

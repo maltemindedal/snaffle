@@ -1,12 +1,12 @@
-"""Custom exceptions for the pyfetch HTTP client.
+"""Custom exceptions for the snaffle HTTP client.
 
 This module defines a hierarchy of custom exceptions to provide more specific
-error information when using the pyfetch client.
+error information when using the snaffle client.
 """
 
 
 class HTTPClientError(Exception):
-    """Base exception for all errors raised by the pyfetch client.
+    """Base exception for all errors raised by the snaffle client.
 
     This exception serves as the base for more specific client-related errors,
     allowing for consolidated error handling.

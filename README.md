@@ -1,9 +1,18 @@
-# PyFetch: A Lightweight HTTP CLI and Library
+# Snaffle: A Lightweight HTTP CLI and Library
+
+> **snaffle** _(verb, informal, British)_ — to take something for oneself,
+> typically quickly or without permission.
+>
+> _"Snaffle it off the server."_
 
 A lightweight command-line interface and Python library for making HTTP requests.
 Built with Python, this tool provides an easy way to make GET, POST, PUT, PATCH,
 DELETE, HEAD, and OPTIONS requests with support for JSON data, customizable timeouts,
 automatic retries on failures, and a verbose mode for detailed logging.
+
+```bash
+snaffle GET https://httpbin.org/get
+```
 
 ## Features
 
@@ -36,7 +45,7 @@ against `https://example.com` (median of 6 requests) and a local server:
 | 100 sequential local GETs (per request) | 1.47 ms | 0.57 ms |
 | TCP connections opened per 200 requests | 200     | 1       |
 | Request returning a 404                 | 4.78 ms | 0.60 ms |
-| CLI start-up (`pyfetch HELP`)           | 238 ms  | 80 ms   |
+| CLI start-up (`snaffle HELP`)           | 238 ms  | 80 ms   |
 
 Behaviours that changed to get there:
 
@@ -56,7 +65,7 @@ Behaviours that changed to get there:
 
 urllib3 applies its idempotent-method filter to read errors and to retryable
 statuses, but **not** to connection errors. That asymmetry is deliberate, and
-PyFetch keeps it:
+Snaffle keeps it:
 
 | Failure                              | `GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS` | `POST`, `PATCH` |
 | ------------------------------------ | ----------------------------------------- | --------------- |
@@ -93,8 +102,8 @@ uv sync --extra speedups
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/maltemindedal/pyfetch.git
-cd pyfetch
+git clone https://github.com/maltemindedal/snaffle.git
+cd snaffle
 ```
 
 2. Sync the project dependencies:
@@ -106,7 +115,7 @@ uv sync --group dev
 3. Run the CLI from the managed environment:
 
 ```bash
-uv run pyfetch HELP
+uv run snaffle HELP
 ```
 
 ## Project Layout
@@ -116,9 +125,9 @@ recommended by the PyPA, so tests exercise the installed distribution rather
 than whatever happens to sit in the working directory.
 
 ```
-src/pyfetch/        The package (import name: `pyfetch`)
+src/snaffle/        The package (import name: `snaffle`)
   __init__.py       Public API; resolves HTTPClient lazily (PEP 562)
-  __main__.py       `python -m pyfetch` and the `pyfetch` console script
+  __main__.py       `python -m snaffle` and the `snaffle` console script
   cli.py            Argument parsing and response rendering
   http_client.py    HTTP client, session pooling, retry policy
   exceptions.py     Exception hierarchy
@@ -129,29 +138,16 @@ tests/              One module per source module: test_<module>.py
 The package is fully typed and ships a `py.typed` marker, so downstream type
 checkers use its annotations without extra configuration.
 
-## Upgrading from 1.x
-
-The import package was renamed from `PyFetch` to `pyfetch` in 2.0.0 to follow
-PEP 8. The distribution name, the console script, and the built wheel were
-already lowercase, so only the import path changes:
-
-```python
-from PyFetch import HTTPClient  # 1.x
-from pyfetch import HTTPClient  # 2.0+
-```
-
-There is no compatibility shim. See [CHANGELOG.md](CHANGELOG.md) for the rest.
-
 ## Library Usage
 
-You can also use PyFetch as a library in your Python projects.
+You can also use Snaffle as a library in your Python projects.
 
 ### Creating a Client
 
 First, import and create an instance of the `HTTPClient`:
 
 ```python
-from pyfetch import HTTPClient
+from snaffle import HTTPClient
 
 client = HTTPClient(timeout=30, retries=3, verbose=False)
 ```
@@ -187,7 +183,7 @@ print(response.json())
 The client raises specific exceptions for different types of errors:
 
 ```python
-from pyfetch.exceptions import HTTPClientError, HTTPConnectionError
+from snaffle.exceptions import HTTPClientError, HTTPConnectionError
 
 try:
     response = client.get("https://a-non-existent-domain.com")
@@ -203,37 +199,37 @@ except HTTPClientError as e:
 
 ```bash
 # 1. Normal GET request:
-pyfetch GET https://httpbin.org/get
+snaffle GET https://httpbin.org/get
 
 # 2. GET request with progress bar (for files larger than 5MB):
-pyfetch GET https://example.com/large-file.zip --progress
+snaffle GET https://example.com/large-file.zip --progress
 
 # 3. GET request with verbose mode to see retry logs and detailed output:
-pyfetch GET https://httpbin.org/get --verbose
+snaffle GET https://httpbin.org/get --verbose
 
 # 4. GET request with a custom header (e.g., Authorization token):
-pyfetch GET https://httpbin.org/headers -H "Authorization: Bearer your_token_here"
+snaffle GET https://httpbin.org/headers -H "Authorization: Bearer your_token_here"
 
 # 5. POST request with JSON data and custom Content-Type header:
-pyfetch POST https://httpbin.org/post -d '{"key": "value"}' -H "Content-Type: application/json"
+snaffle POST https://httpbin.org/post -d '{"key": "value"}' -H "Content-Type: application/json"
 
 # 6. PUT request example to update a resource:
-pyfetch PUT https://httpbin.org/put -d '{"name": "New Name"}' -H "Content-Type: application/json"
+snaffle PUT https://httpbin.org/put -d '{"name": "New Name"}' -H "Content-Type: application/json"
 
 # 7. PATCH request example to partially update a resource:
-pyfetch PATCH https://httpbin.org/patch -d '{"email": "user@example.com"}' -H "Content-Type: application/json"
+snaffle PATCH https://httpbin.org/patch -d '{"email": "user@example.com"}' -H "Content-Type: application/json"
 
 # 8. DELETE request to remove a resource:
-pyfetch DELETE https://httpbin.org/delete
+snaffle DELETE https://httpbin.org/delete
 
 # 9. HEAD request to fetch only headers:
-pyfetch HEAD https://httpbin.org/get
+snaffle HEAD https://httpbin.org/get
 
 # 10. OPTIONS request to check allowed methods:
-pyfetch OPTIONS https://httpbin.org/get
+snaffle OPTIONS https://httpbin.org/get
 
 # 11. Show help message:
-pyfetch HELP
+snaffle HELP
 ```
 
 ## Testing
@@ -299,7 +295,7 @@ To add new tests:
 ### GET Request
 
 ```
-usage: pyfetch GET [-h] [-t TIMEOUT] [-H HEADER] [-v] [--progress] url
+usage: snaffle GET [-h] [-t TIMEOUT] [-H HEADER] [-v] [--progress] url
 
 positional arguments:
   url                   Target URL
@@ -317,7 +313,7 @@ options:
 ### POST Request
 
 ```
-usage: pyfetch POST [-h] [-t TIMEOUT] [-d DATA] url
+usage: snaffle POST [-h] [-t TIMEOUT] [-d DATA] url
 
 positional arguments:
   url                   Target URL
@@ -332,7 +328,7 @@ options:
 ### PUT Request
 
 ```
-usage: pyfetch PUT [-h] [-t TIMEOUT] [-d DATA] url
+usage: snaffle PUT [-h] [-t TIMEOUT] [-d DATA] url
 
 positional arguments:
   url                   Target URL
@@ -347,7 +343,7 @@ options:
 ### PATCH Request
 
 ```
-usage: pyfetch PATCH [-h] [-t TIMEOUT] [-d DATA] url
+usage: snaffle PATCH [-h] [-t TIMEOUT] [-d DATA] url
 
 positional arguments:
   url                   Target URL
@@ -362,7 +358,7 @@ options:
 ### DELETE Request
 
 ```
-usage: pyfetch DELETE [-h] [-t TIMEOUT] url
+usage: snaffle DELETE [-h] [-t TIMEOUT] url
 
 positional arguments:
   url                   Target URL
@@ -376,7 +372,7 @@ options:
 ### HEAD Request
 
 ```
-usage: pyfetch HEAD [-h] [-t TIMEOUT] url
+usage: snaffle HEAD [-h] [-t TIMEOUT] url
 
 positional arguments:
   url                   Target URL
@@ -390,7 +386,7 @@ options:
 ### OPTIONS Request
 
 ```
-usage: pyfetch OPTIONS [-h] [-t TIMEOUT] url
+usage: snaffle OPTIONS [-h] [-t TIMEOUT] url
 
 positional arguments:
   url                   Target URL
@@ -446,7 +442,7 @@ All errors are displayed with descriptive messages to help diagnose the issue.
 1. Command not found:
 
 - Run `uv sync --group dev` to install the project and its tooling
-- Use `uv run pyfetch HELP` to invoke the CLI inside the managed environment
+- Use `uv run snaffle HELP` to invoke the CLI inside the managed environment
 
 2. Import errors:
 
