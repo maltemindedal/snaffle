@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+import subprocess
+import sys
 import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -37,7 +39,7 @@ class TestCLI(unittest.TestCase):
             main(["HELP"], suppress_output=True)
             self.assertEqual("", fake_stdout.getvalue())
 
-    @patch("PyFetch.cli.HTTPClient.get")
+    @patch("PyFetch.http_client.HTTPClient.get")
     def test_get_command(self, mock_get: MagicMock) -> None:
         """Test the GET command."""
         mock_get.return_value = self._build_response(text="Success")
@@ -51,7 +53,7 @@ class TestCLI(unittest.TestCase):
         self.assertIn("Response Body:", output)
         self.assertIn("Success", output)
 
-    @patch("PyFetch.cli.HTTPClient.post")
+    @patch("PyFetch.http_client.HTTPClient.post")
     def test_post_command(self, mock_post: MagicMock) -> None:
         """Test the POST command."""
         mock_post.return_value = self._build_response(
@@ -71,33 +73,33 @@ class TestCLI(unittest.TestCase):
             json={"key": "value"},
         )
 
-    @patch("PyFetch.cli.HTTPClient.post")
+    @patch("PyFetch.http_client.HTTPClient.post")
     def test_progress_is_not_available_for_post(self, mock_post: MagicMock) -> None:
         """Test that --progress is not available for POST command."""
         mock_post.return_value.text = "{}"
-        with self.assertRaises(SystemExit):
-            with patch("sys.stderr", new_callable=io.StringIO):
-                main(["POST", "https://api.example.com", "--progress"])
+        with (
+            self.assertRaises(SystemExit),
+            patch("sys.stderr", new_callable=io.StringIO),
+        ):
+            main(["POST", "https://api.example.com", "--progress"])
 
     def test_invalid_header_value_exits_with_error(self) -> None:
         """Test invalid header formatting returns a CLI error."""
         fake_stdout = io.StringIO()
-        with self.assertRaises(SystemExit):
-            with patch("sys.stdout", new=fake_stdout):
-                main(["GET", "https://api.example.com", "-H", "Authorization"])
+        with self.assertRaises(SystemExit), patch("sys.stdout", new=fake_stdout):
+            main(["GET", "https://api.example.com", "-H", "Authorization"])
 
         self.assertIn("Invalid header format", fake_stdout.getvalue())
 
     def test_invalid_json_value_exits_with_error(self) -> None:
         """Test invalid JSON data returns a CLI error."""
         fake_stdout = io.StringIO()
-        with self.assertRaises(SystemExit):
-            with patch("sys.stdout", new=fake_stdout):
-                main(["POST", "https://api.example.com", "-d", "{not-json}"])
+        with self.assertRaises(SystemExit), patch("sys.stdout", new=fake_stdout):
+            main(["POST", "https://api.example.com", "-d", "{not-json}"])
 
         self.assertIn("Invalid JSON data", fake_stdout.getvalue())
 
-    @patch("PyFetch.cli.HTTPClient.get")
+    @patch("PyFetch.http_client.HTTPClient.get")
     def test_suppress_output_hides_response_text(self, mock_get: MagicMock) -> None:
         """Test suppress_output keeps stdout clean during command execution."""
         mock_get.return_value = self._build_response(text="Success")
@@ -106,6 +108,19 @@ class TestCLI(unittest.TestCase):
             main(["GET", "https://api.example.com"], suppress_output=True)
 
         self.assertEqual("", fake_stdout.getvalue())
+
+    def test_help_path_does_not_import_requests(self) -> None:
+        """Guard the start-up win: help must not drag in the HTTP stack."""
+        probe = (
+            "import sys; from PyFetch.cli import main; main(['HELP'], True);"
+            " sys.exit(1 if 'requests' in sys.modules else 0)"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", probe], capture_output=True, text=True
+        )
+        self.assertEqual(
+            result.returncode, 0, f"requests was imported on the help path: {result}"
+        )
 
 
 if __name__ == "__main__":
