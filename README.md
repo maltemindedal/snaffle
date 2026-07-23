@@ -1,458 +1,124 @@
-# Snaffle: A Lightweight HTTP CLI and Library
+# Snaffle
+
+A command-line HTTP client, and the Python library behind it.
 
 > **snaffle** _(verb, informal, British)_ — to take something for oneself,
 > typically quickly or without permission.
 >
 > _"Snaffle it off the server."_
 
-A lightweight command-line interface and Python library for making HTTP requests.
-Built with Python, this tool provides an easy way to make GET, POST, PUT, PATCH,
-DELETE, HEAD, and OPTIONS requests with support for JSON data, customizable timeouts,
-automatic retries on failures, and a verbose mode for detailed logging.
+Snaffle makes one-off HTTP requests from a terminal readable: send a request,
+get the status, headers, and a pretty-printed body. The same client is
+importable, so a script that outgrows the command line does not have to change
+tools. It supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS, pools
+connections across requests, and retries only the failures that are worth
+retrying.
 
 ```bash
 snaffle GET https://httpbin.org/get
 ```
 
-## Features
+## Quick start
 
-- Simple command-line interface
-- Can be used as a Python library
-- Case-insensitive commands (GET/get, POST/post etc.)
-- Support for GET, PUT, POST, PATCH, DELETE, HEAD, and OPTIONS requests
-- JSON data handling for POST requests
-- Optional progress bars for large file downloads (>5MB)
-- Customizable timeout settings and automatic retries on failures
-- Connection pooling: repeated requests to a host reuse the TCP/TLS connection
-- Fast start-up: the HTTP stack is imported only when a request is actually made
-- Verbose mode for debugging: logs requests and responses
-- Detailed response output
-  - Status code
-  - Response headers
-  - Response body (pretty-printed if JSON)
-- Comprehensive error handling
-- Built-in help system
-
-## Performance
-
-The client keeps a pooled `requests.Session` alive for its lifetime, so a second
-request to the same host skips the TCP and TLS handshake entirely. Measured
-against `https://example.com` (median of 6 requests) and a local server:
-
-| Scenario                                | Before  | After   |
-| --------------------------------------- | ------- | ------- |
-| Repeat HTTPS request to the same host   | 24.5 ms | 6.2 ms  |
-| 100 sequential local GETs (per request) | 1.47 ms | 0.57 ms |
-| TCP connections opened per 200 requests | 200     | 1       |
-| Request returning a 404                 | 4.78 ms | 0.60 ms |
-| CLI start-up (`snaffle HELP`)           | 238 ms  | 80 ms   |
-
-Behaviours that changed to get there:
-
-- **Retries are now selective.** Only connection failures and transient statuses
-  (408, 425, 429, 500, 502, 503, 504) are retried. Previously every failure was
-  retried three times, so a 404 cost three round trips to reach the same answer.
-- **`GET` no longer streams unless `--progress` is used.** Streaming a body that
-  nothing consumes held a connection open per request. A caller who passes
-  `stream=True` explicitly still gets an unconsumed response to iterate.
-- **A client now owns a connection and should be closed.** Use it as a context
-  manager or call `close()`. Code that created a client per request will hold
-  sockets open until garbage collection.
-- **`DOWNLOAD_CHUNK_SIZE` rose from 8 KiB to 64 KiB**, which affects the working
-  set while a `--progress` download is in flight.
-
-### What is and isn't retried
-
-urllib3 applies its idempotent-method filter to read errors and to retryable
-statuses, but **not** to connection errors. That asymmetry is deliberate, and
-Snaffle keeps it:
-
-| Failure                              | `GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS` | `POST`, `PATCH` |
-| ------------------------------------ | ----------------------------------------- | --------------- |
-| Connection never established         | retried                                   | **retried**     |
-| Read failure after the request landed| retried                                   | not retried     |
-| Retryable status (429, 503, ...)     | retried                                   | not retried     |
-
-A request that never reached the server cannot have been acted on twice, so
-retrying it is safe for any method. Once the request is on the wire, a `POST`
-may already have been processed, so it is never replayed.
-
-Retries use exponential backoff and honour `Retry-After`. The trade-off is that
-a request destined to fail takes about half a second longer across the default
-three attempts than an immediate-retry loop would.
-
-### Optional transfer compression
-
-Installing the `speedups` extra lets urllib3 negotiate Zstandard and Brotli, so
-large text and JSON responses arrive materially smaller:
-
-```bash
-uv sync --extra speedups
-```
-
-## Installation
-
-### Prerequisites
-
-- Python 3.10 or higher
-- [uv](https://docs.astral.sh/uv/) _(recommended)_
-
-### Setup
-
-1. Clone the repository:
+Requires **Python 3.10+** and **[uv](https://docs.astral.sh/uv/)**. Snaffle is
+not on PyPI; install it from a clone.
 
 ```bash
 git clone https://github.com/maltemindedal/snaffle.git
 cd snaffle
-```
-
-2. Sync the project dependencies:
-
-```bash
 uv sync --group dev
-```
-
-3. Run the CLI from the managed environment:
-
-```bash
 uv run snaffle HELP
 ```
 
-## Project Layout
+That last command prints the usage line, the seven method commands, and eleven
+worked examples. If you see it, Snaffle works.
 
-The package uses the [src-layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/)
-recommended by the PyPA, so tests exercise the installed distribution rather
-than whatever happens to sit in the working directory.
-
-```
-src/snaffle/        The package (import name: `snaffle`)
-  __init__.py       Public API; resolves HTTPClient lazily (PEP 562)
-  __main__.py       `python -m snaffle` and the `snaffle` console script
-  cli.py            Argument parsing and response rendering
-  http_client.py    HTTP client, session pooling, retry policy
-  exceptions.py     Exception hierarchy
-  py.typed          PEP 561 marker
-tests/              One module per source module: test_<module>.py
-```
-
-The package is fully typed and ships a `py.typed` marker, so downstream type
-checkers use its annotations without extra configuration.
-
-## Library Usage
-
-You can also use Snaffle as a library in your Python projects.
-
-### Creating a Client
-
-First, import and create an instance of the `HTTPClient`:
-
-```python
-from snaffle import HTTPClient
-
-client = HTTPClient(timeout=30, retries=3, verbose=False)
-```
-
-Each client owns a pooled connection. Use it as a context manager (or call
-`client.close()`) so the pool is released when you are done, and keep one client
-for a batch of requests rather than creating one per call:
-
-```python
-with HTTPClient() as client:
-    for page in range(10):
-        # Every iteration after the first reuses the open connection.
-        client.get(f"https://httpbin.org/get?page={page}")
-```
-
-### Making Requests
-
-You can then use the client to make HTTP requests:
-
-```python
-# Make a GET request
-response = client.get("https://httpbin.org/get")
-print(response.json())
-
-# Make a POST request with JSON data
-data = {"key": "value"}
-response = client.post("https://httpbin.org/post", json=data)
-print(response.json())
-```
-
-### Error Handling
-
-The client raises specific exceptions for different types of errors:
-
-```python
-from snaffle.exceptions import HTTPClientError, HTTPConnectionError
-
-try:
-    response = client.get("https://a-non-existent-domain.com")
-except HTTPConnectionError as e:
-    print(f"Connection failed: {e}")
-except HTTPClientError as e:
-    print(f"An error occurred: {e}")
-```
-
-## CLI Usage
-
-### Example Commands
+Then make a request:
 
 ```bash
-# 1. Normal GET request:
-snaffle GET https://httpbin.org/get
-
-# 2. GET request with progress bar (for files larger than 5MB):
-snaffle GET https://example.com/large-file.zip --progress
-
-# 3. GET request with verbose mode to see retry logs and detailed output:
-snaffle GET https://httpbin.org/get --verbose
-
-# 4. GET request with a custom header (e.g., Authorization token):
-snaffle GET https://httpbin.org/headers -H "Authorization: Bearer your_token_here"
-
-# 5. POST request with JSON data and custom Content-Type header:
-snaffle POST https://httpbin.org/post -d '{"key": "value"}' -H "Content-Type: application/json"
-
-# 6. PUT request example to update a resource:
-snaffle PUT https://httpbin.org/put -d '{"name": "New Name"}' -H "Content-Type: application/json"
-
-# 7. PATCH request example to partially update a resource:
-snaffle PATCH https://httpbin.org/patch -d '{"email": "user@example.com"}' -H "Content-Type: application/json"
-
-# 8. DELETE request to remove a resource:
-snaffle DELETE https://httpbin.org/delete
-
-# 9. HEAD request to fetch only headers:
-snaffle HEAD https://httpbin.org/get
-
-# 10. OPTIONS request to check allowed methods:
-snaffle OPTIONS https://httpbin.org/get
-
-# 11. Show help message:
-snaffle HELP
+uv run snaffle GET https://httpbin.org/get
 ```
-
-## Testing
-
-The project includes a comprehensive test suite using Python's unittest framework.
-
-### Running Tests
-
-Run all tests using the UV-managed environment:
-
-```bash
-uv run python -m unittest discover tests
-```
-
-### Linting and Formatting
-
-```bash
-uv run ruff check .
-uv run ruff format --check .
-```
-
-### Type Checking
-
-```bash
-uv run mypy .
-```
-
-To apply the formatter locally:
-
-```bash
-uv run ruff format .
-```
-
-### Test Coverage
-
-The test suite covers:
-
-- HTTP client functionality
-- CLI commands and arguments
-- Error handling and exceptions
-- Input validation
-- Response processing
-
-### Writing Tests
-
-Tests are organized in three main files:
-
-- `tests/test_cli.py` - Command-line interface tests
-- `tests/test_http_client.py` - HTTP client functionality tests
-- `tests/test_exceptions.py` - Exception handling tests
-
-Typing is enforced with `mypy` in strict mode across both `src/` and `tests/`.
-
-To add new tests:
-
-1. Choose the appropriate test file based on functionality
-2. Create a new test method in the relevant test class
-3. Use unittest assertions to verify behavior
-4. Run the test suite to ensure all tests pass
-
-## Command Reference
-
-### GET Request
-
-```
-usage: snaffle GET [-h] [-t TIMEOUT] [-H HEADER] [-v] [--progress] url
-
-positional arguments:
-  url                   Target URL
-
-options:
-  -h, --help           show this help message and exit
-  -t TIMEOUT, --timeout TIMEOUT
-                       Request timeout in seconds (default: 30)
-  -H HEADER, --header HEADER
-                       HTTP header in 'Key: Value' format. Can be used multiple times.
-  -v, --verbose        Enable verbose logging for debugging.
-  --progress           Show progress bar for downloads larger than 5MB
-```
-
-### POST Request
-
-```
-usage: snaffle POST [-h] [-t TIMEOUT] [-d DATA] url
-
-positional arguments:
-  url                   Target URL
-
-options:
-  -h, --help            show this help message and exit
-  -t TIMEOUT, --timeout TIMEOUT
-                        Request timeout in seconds (default: 30)
-  -d DATA, --data DATA  R|JSON data for request body. Example: '{"key": "value"}'
-```
-
-### PUT Request
-
-```
-usage: snaffle PUT [-h] [-t TIMEOUT] [-d DATA] url
-
-positional arguments:
-  url                   Target URL
-
-options:
-  -h, --help            show this help message and exit
-  -t TIMEOUT, --timeout TIMEOUT
-                        Request timeout in seconds (default: 30)
-  -d DATA, --data DATA  R|JSON data for request body. Example: '{"key": "value"}'
-```
-
-### PATCH Request
-
-```
-usage: snaffle PATCH [-h] [-t TIMEOUT] [-d DATA] url
-
-positional arguments:
-  url                   Target URL
-
-options:
-  -h, --help            show this help message and exit
-  -t TIMEOUT, --timeout TIMEOUT
-                        Request timeout in seconds (default: 30)
-  -d DATA, --data DATA  R|JSON data for request body. Example: '{"key": "value"}'
-```
-
-### DELETE Request
-
-```
-usage: snaffle DELETE [-h] [-t TIMEOUT] url
-
-positional arguments:
-  url                   Target URL
-
-options:
-  -h, --help            show this help message and exit
-  -t TIMEOUT, --timeout TIMEOUT
-                        Request timeout in seconds (default: 30)
-```
-
-### HEAD Request
-
-```
-usage: snaffle HEAD [-h] [-t TIMEOUT] url
-
-positional arguments:
-  url                   Target URL
-
-options:
-  -h, --help            show this help message and exit
-  -t TIMEOUT, --timeout TIMEOUT
-                        Request timeout in seconds (default: 30)
-```
-
-### OPTIONS Request
-
-```
-usage: snaffle OPTIONS [-h] [-t TIMEOUT] url
-
-positional arguments:
-  url                   Target URL
-
-options:
-  -h, --help            show this help message and exit
-  -t TIMEOUT, --timeout TIMEOUT
-                        Request timeout in seconds (default: 30)
-```
-
-## Response Format
 
 ```
 Status Code: 200
 
 Headers:
 content-type: application/json
-cache-control: no-cache
-...
+content-length: 292
 
 Response Body:
 {
-    "data": {
-        ...
-    }
+    "args": {},
+    "url": "https://httpbin.org/get"
 }
 ```
 
-## Error Handling
+Full walkthrough: [Getting started](docs/getting-started.md).
 
-The CLI handles various types of errors:
+## Usage
 
-- Connection errors
-- Invalid JSON data
-- HTTP response errors
-- Request timeout errors
-- Keyboard interrupts (Ctrl+C)
+Commands are case-insensitive. `-H` repeats for multiple headers; `-d` takes a
+JSON body and sets `Content-Type` for you.
 
-All errors are displayed with descriptive messages to help diagnose the issue.
+```bash
+snaffle POST https://httpbin.org/post \
+  -d '{"key": "value"}' \
+  -H "Authorization: Bearer token123" \
+  -v
+```
+
+The same request from Python:
+
+```python
+from snaffle import HTTPClient
+
+with HTTPClient(timeout=10) as client:
+    response = client.post(
+        "https://httpbin.org/post",
+        json={"key": "value"},
+        headers={"Authorization": "Bearer token123"},
+    )
+    print(response.json())
+```
+
+`response` is a `requests.Response`. Use the client as a context manager — it
+owns a connection pool, and every request after the first to a given host
+reuses the open connection.
+
+## Documentation
+
+| | |
+| --- | --- |
+| [Getting started](docs/getting-started.md) | Clone to first request, in about ten minutes. |
+| [Use as a library](docs/guides/using-as-a-library.md) | Batching, error handling, custom bodies, tuning. |
+| [Download large files](docs/guides/downloading-large-files.md) | Progress bars and streaming. |
+| [Troubleshooting](docs/guides/troubleshooting.md) | Symptom-first fixes. |
+| [CLI reference](docs/reference/cli.md) | Every command, flag, and exit code. |
+| [Python API reference](docs/reference/python-api.md) | `HTTPClient`, constants, exceptions. |
+| [Architecture](docs/architecture/overview.md) | How it fits together, and why. |
+
+The full index is [docs/README.md](docs/README.md).
+
+## Project structure
+
+```
+src/snaffle/   The package (import name: snaffle). src-layout, so tests
+               exercise the installed distribution.
+tests/         One unittest module per source module.
+docs/          All documentation. Start at docs/README.md.
+.github/       CI: lint, format, mypy, tests on Python 3.10-3.14, wheel build.
+.agents/       Skill definitions for LLM coding assistants.
+```
+
+The package is fully typed and ships a PEP 561 `py.typed` marker, so downstream
+type checkers use its annotations without extra configuration.
 
 ## Contributing
 
-1. Fork the repository
-2. Create your feature branch (git checkout -b feature/amazing-feature)
-3. Commit your changes (git commit -m 'Add some amazing feature')
-4. Push to the branch (git push origin feature/amazing-feature)
-5. Open a Pull Request
-
-## Troubleshooting
-
-### Common Issues
-
-1. Command not found:
-
-- Run `uv sync --group dev` to install the project and its tooling
-- Use `uv run snaffle HELP` to invoke the CLI inside the managed environment
-
-2. Import errors:
-
-- Re-sync the environment: `uv sync --group dev`
-- Make sure you're using the correct Python environment
-
-3. JSON errors:
-   - Verify your JSON data is properly formatted
-   - Use single quotes around the entire JSON string and double quotes inside
+Setup, conventions, and the four checks CI runs are in
+[CONTRIBUTING.md](CONTRIBUTING.md). Changes are recorded in
+[CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
-This project is licensed under the Apache License, Version 2.0 - see the LICENSE file for details.
+[MIT](LICENSE).
