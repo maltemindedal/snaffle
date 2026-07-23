@@ -1,12 +1,12 @@
-# Contributing to PyFetch
+# Contributing to Snaffle
 
 ## Project layout
 
 ```
-src/pyfetch/        The package. src-layout, so tests run against the
+src/snaffle/        The package. src-layout, so tests run against the
                     installed distribution rather than the working directory.
   __init__.py       Public API. Resolves HTTPClient lazily (PEP 562).
-  __main__.py       `python -m pyfetch` and the `pyfetch` console script.
+  __main__.py       `python -m snaffle` and the `snaffle` console script.
   cli.py            Argument parsing and response rendering.
   http_client.py    The HTTP client, session pooling, and retry policy.
   exceptions.py     Exception hierarchy.
@@ -17,9 +17,9 @@ tests/              One test module per source module: test_<module>.py.
 Conventions:
 
 - Package and module names are short and all-lowercase (PEP 8). The import
-  package is `pyfetch`; there is no `PyFetch`.
+  package is `snaffle`; there is no `Snaffle`.
 - Every public module, class, and function carries a docstring.
-- Imports of first-party code are absolute (`from pyfetch.exceptions import ...`),
+- Imports of first-party code are absolute (`from snaffle.exceptions import ...`),
   never relative.
 - Anything that would import `requests` at module scope should be deferred, so
   that the CLI's help paths stay fast. `tests/test_cli.py` guards this.

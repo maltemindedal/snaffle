@@ -1,13 +1,13 @@
-"""Main entry point for the pyfetch command-line application.
+"""Main entry point for the snaffle command-line application.
 
-This module allows the pyfetch application to be executed as a package
-by running `python -m pyfetch`. It handles the initial execution and
+This module allows the snaffle application to be executed as a package
+by running `python -m snaffle`. It handles the initial execution and
 catches common exceptions like `KeyboardInterrupt`.
 """
 
 import sys
 
-from pyfetch.cli import main
+from snaffle.cli import main
 
 
 def run() -> None:

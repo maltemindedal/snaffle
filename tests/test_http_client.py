@@ -15,8 +15,8 @@ import requests
 from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
 from urllib3.util.retry import Retry
 
-from pyfetch.exceptions import HTTPConnectionError, ResponseError
-from pyfetch.http_client import HTTPClient
+from snaffle.exceptions import HTTPConnectionError, ResponseError
+from snaffle.http_client import HTTPClient
 
 SESSION_REQUEST = "requests.Session.request"
 

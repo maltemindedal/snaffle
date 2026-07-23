@@ -18,7 +18,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from pyfetch.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
+from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 
 
 class ProgressBar(Protocol):
