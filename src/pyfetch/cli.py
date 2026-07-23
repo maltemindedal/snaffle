@@ -1,7 +1,7 @@
 """Command-line interface for making HTTP requests.
 
 This module provides a command-line interface (CLI) for making HTTP requests
-using the PyFetch HTTP client. It supports common HTTP methods, custom headers,
+using the pyfetch HTTP client. It supports common HTTP methods, custom headers,
 JSON data, and other features.
 
 The HTTP client (and with it ``requests``) is imported lazily so that ``--help``,
@@ -17,7 +17,7 @@ import textwrap
 from collections.abc import Sequence
 from typing import Any, NamedTuple, TypedDict
 
-from PyFetch.exceptions import HTTPClientError
+from pyfetch.exceptions import HTTPClientError
 
 
 class RequestKwargs(TypedDict, total=False):
@@ -87,7 +87,7 @@ COMMANDS: tuple[Command, ...] = (
 
 
 def show_examples(suppress_output: bool = False) -> str:
-    """Prints usage examples for the PyFetch CLI.
+    """Prints usage examples for the pyfetch CLI.
 
     This function displays a list of common commands to guide the user.
 
@@ -205,6 +205,9 @@ def create_parser() -> argparse.ArgumentParser:
         argparse.ArgumentParser: The configured argument parser.
     """
     parser = argparse.ArgumentParser(
+        # Pinned so `pyfetch`, `python -m pyfetch`, and a direct script call all
+        # print the same usage line instead of echoing the interpreter path.
+        prog="pyfetch",
         description="HTTP CLI client supporting GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS methods",
         formatter_class=CustomFormatter,
         add_help=True,
@@ -241,7 +244,7 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> None:
-    """The main entry point for the PyFetch CLI.
+    """The main entry point for the pyfetch CLI.
 
     This function parses command-line arguments, initializes the HTTP client,
     and executes the requested HTTP command. It also handles response printing
@@ -265,7 +268,7 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
         return
 
     # Deferred so the help paths above never import the HTTP stack.
-    from PyFetch.http_client import HTTPClient
+    from pyfetch.http_client import HTTPClient
 
     try:
         kwargs = _parse_request_kwargs(args)

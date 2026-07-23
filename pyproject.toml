@@ -3,8 +3,8 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "PyFetch"
-version = "1.1.0"
+name = "pyfetch"
+version = "2.0.0"
 description = "A simple HTTP CLI client"
 readme = "README.md"
 license = "Apache-2.0"
@@ -28,10 +28,17 @@ dependencies = ["requests>=2.33.1", "tqdm>=4.66.0", "urllib3>=2.7.0"]
 speedups = ["zstandard>=0.23", "brotli>=1.1"]
 
 [project.scripts]
-pyfetch = "PyFetch.cli:main"
+# Points at `run`, not `cli:main`, so the console script gets the same
+# KeyboardInterrupt handling as `python -m pyfetch`.
+pyfetch = "pyfetch.__main__:run"
 
 [tool.setuptools.packages.find]
-include = ["PyFetch", "PyFetch.*"]
+where = ["src"]
+include = ["pyfetch", "pyfetch.*"]
+
+[tool.setuptools.package-data]
+# PEP 561: ship the marker so downstream type checkers use our annotations.
+pyfetch = ["py.typed"]
 
 [dependency-groups]
 dev = ["mypy>=1.13,<2", "ruff>=0.11.5,<0.12", "types-requests>=2.33.0,<3"]
@@ -39,7 +46,11 @@ dev = ["mypy>=1.13,<2", "ruff>=0.11.5,<0.12", "types-requests>=2.33.0,<3"]
 [tool.mypy]
 python_version = "3.10"
 strict = true
-files = ["PyFetch", "tests"]
+files = ["src", "tests"]
+mypy_path = "src"
+# Build output duplicates the package; without this, `mypy .` after a build
+# fails with "Duplicate module named 'pyfetch'".
+exclude = ["^build/", "^dist/"]
 
 [[tool.mypy.overrides]]
 module = ["tqdm"]
@@ -48,10 +59,14 @@ ignore_missing_imports = true
 [tool.ruff]
 target-version = "py310"
 line-length = 88
+src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PERF"]
 ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["pyfetch"]
 
 [tool.ruff.format]
 quote-style = "double"
