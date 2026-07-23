@@ -6,7 +6,7 @@ command-line tool and as a library in other Python applications.
 
 `HTTPClient` is resolved lazily (PEP 562) so that importing this package -- or
 running the CLI's help paths -- does not pull in `requests`, which costs well
-over 100 ms of interpreter start-up on its own. `from pyfetch import HTTPClient`
+over 100 ms of interpreter start-up on its own. `from snaffle import HTTPClient`
 keeps working exactly as before and imports the stack on first access.
 
 Public API:
@@ -18,12 +18,12 @@ Public API:
 
 from typing import TYPE_CHECKING, Any
 
-from pyfetch.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
+from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 
 if TYPE_CHECKING:
-    from pyfetch.http_client import HTTPClient
+    from snaffle.http_client import HTTPClient
 
-__version__ = "2.0.0"
+__version__ = "3.0.0"
 
 __all__ = [
     "HTTPClient",
@@ -37,7 +37,7 @@ __all__ = [
 def __getattr__(name: str) -> Any:
     """Resolves `HTTPClient` on first access, deferring the `requests` import."""
     if name == "HTTPClient":
-        from pyfetch.http_client import HTTPClient
+        from snaffle.http_client import HTTPClient
 
         return HTTPClient
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

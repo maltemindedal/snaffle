@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from pyfetch.exceptions import HTTPClientError
+from snaffle.exceptions import HTTPClientError
 
 
 class TestHTTPClientError(unittest.TestCase):

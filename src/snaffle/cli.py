@@ -1,7 +1,7 @@
 """Command-line interface for making HTTP requests.
 
 This module provides a command-line interface (CLI) for making HTTP requests
-using the pyfetch HTTP client. It supports common HTTP methods, custom headers,
+using the snaffle HTTP client. It supports common HTTP methods, custom headers,
 JSON data, and other features.
 
 The HTTP client (and with it ``requests``) is imported lazily so that ``--help``,
@@ -17,7 +17,7 @@ import textwrap
 from collections.abc import Sequence
 from typing import Any, NamedTuple, TypedDict
 
-from pyfetch.exceptions import HTTPClientError
+from snaffle.exceptions import HTTPClientError
 
 
 class RequestKwargs(TypedDict, total=False):
@@ -31,37 +31,37 @@ EXAMPLES = textwrap.dedent(
     """
      Examples:
           1. Normal GET request:
-              pyfetch GET https://httpbin.org/get
+              snaffle GET https://httpbin.org/get
 
           2. GET request with progress bar (for files larger than 5MB):
-              pyfetch GET https://example.com/large-file.zip --progress
+              snaffle GET https://example.com/large-file.zip --progress
 
           3. GET request with verbose mode to see retry logs and detailed output:
-              pyfetch GET https://httpbin.org/get --verbose
+              snaffle GET https://httpbin.org/get --verbose
 
           4. GET request with a custom header (e.g., Authorization token):
-              pyfetch GET https://httpbin.org/headers -H "Authorization: Bearer your_token_here"
+              snaffle GET https://httpbin.org/headers -H "Authorization: Bearer your_token_here"
 
           5. POST request with JSON data and custom Content-Type header:
-              pyfetch POST https://httpbin.org/post -d '{"key": "value"}' -H "Content-Type: application/json"
+              snaffle POST https://httpbin.org/post -d '{"key": "value"}' -H "Content-Type: application/json"
 
           6. PUT request example to update a resource:
-              pyfetch PUT https://httpbin.org/put -d '{"name": "New Name"}' -H "Content-Type: application/json"
+              snaffle PUT https://httpbin.org/put -d '{"name": "New Name"}' -H "Content-Type: application/json"
 
           7. PATCH request example to partially update a resource:
-              pyfetch PATCH https://httpbin.org/patch -d '{"email": "user@example.com"}' -H "Content-Type: application/json"
+              snaffle PATCH https://httpbin.org/patch -d '{"email": "user@example.com"}' -H "Content-Type: application/json"
 
           8. DELETE request to remove a resource:
-              pyfetch DELETE https://httpbin.org/delete
+              snaffle DELETE https://httpbin.org/delete
 
           9. HEAD request to fetch only headers:
-              pyfetch HEAD https://httpbin.org/get
+              snaffle HEAD https://httpbin.org/get
 
           10. OPTIONS request to check allowed methods:
-              pyfetch OPTIONS https://httpbin.org/get
+              snaffle OPTIONS https://httpbin.org/get
 
           11. Show help message:
-              pyfetch HELP
+              snaffle HELP
      """
 )
 
@@ -87,7 +87,7 @@ COMMANDS: tuple[Command, ...] = (
 
 
 def show_examples(suppress_output: bool = False) -> str:
-    """Prints usage examples for the pyfetch CLI.
+    """Prints usage examples for the snaffle CLI.
 
     This function displays a list of common commands to guide the user.
 
@@ -205,9 +205,9 @@ def create_parser() -> argparse.ArgumentParser:
         argparse.ArgumentParser: The configured argument parser.
     """
     parser = argparse.ArgumentParser(
-        # Pinned so `pyfetch`, `python -m pyfetch`, and a direct script call all
+        # Pinned so `snaffle`, `python -m snaffle`, and a direct script call all
         # print the same usage line instead of echoing the interpreter path.
-        prog="pyfetch",
+        prog="snaffle",
         description="HTTP CLI client supporting GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS methods",
         formatter_class=CustomFormatter,
         add_help=True,
@@ -244,7 +244,7 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> None:
-    """The main entry point for the pyfetch CLI.
+    """The main entry point for the snaffle CLI.
 
     This function parses command-line arguments, initializes the HTTP client,
     and executes the requested HTTP command. It also handles response printing
@@ -268,7 +268,7 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
         return
 
     # Deferred so the help paths above never import the HTTP stack.
-    from pyfetch.http_client import HTTPClient
+    from snaffle.http_client import HTTPClient
 
     try:
         kwargs = _parse_request_kwargs(args)

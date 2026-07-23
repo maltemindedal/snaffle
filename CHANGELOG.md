@@ -5,27 +5,51 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-07-23
+
+### Changed
+
+- **BREAKING**: the project is renamed from PyFetch to **Snaffle**. The import
+  package, the distribution, and the console script are all now `snaffle`:
+
+  ```python
+  from pyfetch import HTTPClient   # 2.x
+  from snaffle import HTTPClient   # 3.0+
+  ```
+
+  ```bash
+  pyfetch GET https://example.com   # 2.x
+  snaffle GET https://example.com   # 3.0+
+  ```
+
+  No compatibility shim is provided. The old name was both unavailable on PyPI
+  (held by an unrelated system-information tool) and semantically misleading,
+  since `*fetch` names in that space denote `neofetch`-style system reporters
+  rather than HTTP clients. "Snaffle" is British slang for grabbing something
+  quickly, which is what the tool does.
+- The GitHub repository moved to `maltemindedal/snaffle`. GitHub redirects the
+  old URL, but update your remotes.
+
 ## [2.0.0] - 2026-07-23
 
 ### Changed
 
-- **BREAKING**: the import package is now `pyfetch`, not `PyFetch`, per PEP 8
-  ("Python packages should also have short, all-lowercase names"). Update
-  imports from `from PyFetch import HTTPClient` to `from pyfetch import
-  HTTPClient`. The distribution name, the console script, and the built wheel
-  were already lowercase, so only the import path changes. No compatibility
-  shim is provided.
+- **BREAKING**: the import package became `pyfetch` rather than `PyFetch`, per
+  PEP 8 ("Python packages should also have short, all-lowercase names"). The
+  distribution name, the console script, and the built wheel were already
+  lowercase, so only the import path changed. No compatibility shim was
+  provided.
 - Moved the package under `src/`, following the PyPA src-layout recommendation.
   Tests now exercise the installed package rather than the working directory.
-- The `pyfetch` console script now points at `pyfetch.__main__:run` instead of
-  `pyfetch.cli:main`, so it handles `Ctrl+C` the same way `python -m pyfetch`
-  always did. Previously the console script exited with a traceback.
-- `argparse` usage output is pinned to `pyfetch` rather than deriving from
-  `sys.argv[0]`.
+- The console script began pointing at `__main__:run` instead of `cli:main`, so
+  it handles `Ctrl+C` the same way `python -m` always did. Previously the
+  console script exited with a traceback.
+- `argparse` usage output is pinned to the command name rather than deriving
+  from `sys.argv[0]`.
 
 ### Added
 
-- A PEP 561 `py.typed` marker. The package has been `mypy --strict` clean for
+- A PEP 561 `py.typed` marker. The package had been `mypy --strict` clean for
   some time, but without this marker downstream type checkers ignored all of
   its annotations.
 - `CONTRIBUTING.md`, `CHANGELOG.md`, and `.editorconfig`.
@@ -60,8 +84,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0]
 
-- Initial release.
+- Initial release, as PyFetch.
 
-[2.0.0]: https://github.com/maltemindedal/pyfetch/releases/tag/v2.0.0
-[1.1.0]: https://github.com/maltemindedal/pyfetch/releases/tag/v1.1.0
-[1.0.0]: https://github.com/maltemindedal/pyfetch/releases/tag/v1.0.0
+[3.0.0]: https://github.com/maltemindedal/snaffle/releases/tag/v3.0.0
+[2.0.0]: https://github.com/maltemindedal/snaffle/releases/tag/v2.0.0
+[1.1.0]: https://github.com/maltemindedal/snaffle/releases/tag/v1.1.0
+[1.0.0]: https://github.com/maltemindedal/snaffle/releases/tag/v1.0.0
