@@ -9,7 +9,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from pyfetch.cli import main, show_examples
+from snaffle.cli import main, show_examples
 
 
 class TestCLI(unittest.TestCase):
@@ -39,7 +39,7 @@ class TestCLI(unittest.TestCase):
             main(["HELP"], suppress_output=True)
             self.assertEqual("", fake_stdout.getvalue())
 
-    @patch("pyfetch.http_client.HTTPClient.get")
+    @patch("snaffle.http_client.HTTPClient.get")
     def test_get_command(self, mock_get: MagicMock) -> None:
         """Test the GET command."""
         mock_get.return_value = self._build_response(text="Success")
@@ -53,7 +53,7 @@ class TestCLI(unittest.TestCase):
         self.assertIn("Response Body:", output)
         self.assertIn("Success", output)
 
-    @patch("pyfetch.http_client.HTTPClient.post")
+    @patch("snaffle.http_client.HTTPClient.post")
     def test_post_command(self, mock_post: MagicMock) -> None:
         """Test the POST command."""
         mock_post.return_value = self._build_response(
@@ -73,7 +73,7 @@ class TestCLI(unittest.TestCase):
             json={"key": "value"},
         )
 
-    @patch("pyfetch.http_client.HTTPClient.post")
+    @patch("snaffle.http_client.HTTPClient.post")
     def test_progress_is_not_available_for_post(self, mock_post: MagicMock) -> None:
         """Test that --progress is not available for POST command."""
         mock_post.return_value.text = "{}"
@@ -99,7 +99,7 @@ class TestCLI(unittest.TestCase):
 
         self.assertIn("Invalid JSON data", fake_stdout.getvalue())
 
-    @patch("pyfetch.http_client.HTTPClient.get")
+    @patch("snaffle.http_client.HTTPClient.get")
     def test_suppress_output_hides_response_text(self, mock_get: MagicMock) -> None:
         """Test suppress_output keeps stdout clean during command execution."""
         mock_get.return_value = self._build_response(text="Success")
@@ -111,14 +111,14 @@ class TestCLI(unittest.TestCase):
 
     def test_usage_line_is_stable_across_entry_points(self) -> None:
         """Test help output names the command, not whatever launched it."""
-        from pyfetch.cli import create_parser
+        from snaffle.cli import create_parser
 
-        self.assertTrue(create_parser().format_usage().startswith("usage: pyfetch"))
+        self.assertTrue(create_parser().format_usage().startswith("usage: snaffle"))
 
     def test_help_path_does_not_import_requests(self) -> None:
         """Guard the start-up win: help must not drag in the HTTP stack."""
         probe = (
-            "import sys; from pyfetch.cli import main; main(['HELP'], True);"
+            "import sys; from snaffle.cli import main; main(['HELP'], True);"
             " sys.exit(1 if 'requests' in sys.modules else 0)"
         )
         result = subprocess.run(
