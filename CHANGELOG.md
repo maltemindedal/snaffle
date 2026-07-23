@@ -9,41 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING**: the project is renamed from PyFetch to **Snaffle**. The import
-  package, the distribution, and the console script are all now `snaffle`:
+- **BREAKING**: the project is named Snaffle. The import package, the
+  distribution, and the console script are all `snaffle`:
 
   ```python
-  from pyfetch import HTTPClient   # 2.x
-  from snaffle import HTTPClient   # 3.0+
+  from snaffle import HTTPClient
   ```
 
   ```bash
-  pyfetch GET https://example.com   # 2.x
-  snaffle GET https://example.com   # 3.0+
+  snaffle GET https://example.com
   ```
-
-  No compatibility shim is provided. The old name was both unavailable on PyPI
-  (held by an unrelated system-information tool) and semantically misleading,
-  since `*fetch` names in that space denote `neofetch`-style system reporters
-  rather than HTTP clients. "Snaffle" is British slang for grabbing something
-  quickly, which is what the tool does.
-- The GitHub repository moved to `maltemindedal/snaffle`. GitHub redirects the
-  old URL, but update your remotes.
 
 ## [2.0.0] - 2026-07-23
 
 ### Changed
 
-- **BREAKING**: the import package became `pyfetch` rather than `PyFetch`, per
-  PEP 8 ("Python packages should also have short, all-lowercase names"). The
-  distribution name, the console script, and the built wheel were already
-  lowercase, so only the import path changed. No compatibility shim was
-  provided.
+- **BREAKING**: the import package is all-lowercase, per PEP 8 ("Python
+  packages should also have short, all-lowercase names").
 - Moved the package under `src/`, following the PyPA src-layout recommendation.
   Tests now exercise the installed package rather than the working directory.
-- The console script began pointing at `__main__:run` instead of `cli:main`, so
-  it handles `Ctrl+C` the same way `python -m` always did. Previously the
-  console script exited with a traceback.
+- The console script points at `__main__:run` instead of `cli:main`, so it
+  handles `Ctrl+C` the same way `python -m` always did. Previously the console
+  script exited with a traceback.
 - `argparse` usage output is pinned to the command name rather than deriving
   from `sys.argv[0]`.
 
@@ -84,7 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.0]
 
-- Initial release, as PyFetch.
+- Initial release.
 
 [3.0.0]: https://github.com/maltemindedal/snaffle/releases/tag/v3.0.0
 [2.0.0]: https://github.com/maltemindedal/snaffle/releases/tag/v2.0.0
