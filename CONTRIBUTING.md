@@ -1,0 +1,61 @@
+# Contributing to PyFetch
+
+## Project layout
+
+```
+src/pyfetch/        The package. src-layout, so tests run against the
+                    installed distribution rather than the working directory.
+  __init__.py       Public API. Resolves HTTPClient lazily (PEP 562).
+  __main__.py       `python -m pyfetch` and the `pyfetch` console script.
+  cli.py            Argument parsing and response rendering.
+  http_client.py    The HTTP client, session pooling, and retry policy.
+  exceptions.py     Exception hierarchy.
+  py.typed          PEP 561 marker.
+tests/              One test module per source module: test_<module>.py.
+```
+
+Conventions:
+
+- Package and module names are short and all-lowercase (PEP 8). The import
+  package is `pyfetch`; there is no `PyFetch`.
+- Every public module, class, and function carries a docstring.
+- Imports of first-party code are absolute (`from pyfetch.exceptions import ...`),
+  never relative.
+- Anything that would import `requests` at module scope should be deferred, so
+  that the CLI's help paths stay fast. `tests/test_cli.py` guards this.
+
+## Getting set up
+
+```bash
+uv sync --group dev --extra speedups
+```
+
+## Before opening a pull request
+
+All four must pass; CI runs them on Python 3.10 through 3.14.
+
+```bash
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy .
+uv run python -m unittest discover tests
+```
+
+To apply formatting: `uv run ruff format .`
+
+## Testing notes
+
+Type checking runs in `mypy --strict` over both `src/` and `tests/`.
+
+Do not mock `requests.Session.request` when the behaviour under test involves
+retries. That mock sits *above* the adapter where urllib3's retry logic lives,
+so it cannot observe retries at all — an earlier revision shipped a false claim
+about `POST` retry behaviour on exactly that mistake. Use
+`TestRetryAgainstRealServer`, which counts requests arriving at a real socket,
+or assert against `urllib3.util.retry.Retry` directly.
+
+## Changelog
+
+User-visible changes go in `CHANGELOG.md` under an `Unreleased` heading,
+following Keep a Changelog. The project follows semantic versioning; the import
+package name is part of the public API, so renaming it is a major bump.

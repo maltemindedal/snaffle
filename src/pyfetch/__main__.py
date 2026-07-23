@@ -1,13 +1,13 @@
-"""Main entry point for the PyFetch command-line application.
+"""Main entry point for the pyfetch command-line application.
 
-This module allows the PyFetch application to be executed as a package
-by running `python -m PyFetch`. It handles the initial execution and
+This module allows the pyfetch application to be executed as a package
+by running `python -m pyfetch`. It handles the initial execution and
 catches common exceptions like `KeyboardInterrupt`.
 """
 
 import sys
 
-from PyFetch.cli import main
+from pyfetch.cli import main
 
 
 def run() -> None:
