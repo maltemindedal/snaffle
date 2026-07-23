@@ -138,25 +138,6 @@ tests/              One module per source module: test_<module>.py
 The package is fully typed and ships a `py.typed` marker, so downstream type
 checkers use its annotations without extra configuration.
 
-## Upgrading from PyFetch
-
-This project was called PyFetch through 2.x. In 3.0.0 the package, the
-distribution, and the command all became `snaffle`:
-
-```python
-from pyfetch import HTTPClient   # 2.x
-from snaffle import HTTPClient   # 3.0+
-```
-
-```bash
-pyfetch GET https://example.com   # 2.x
-snaffle GET https://example.com   # 3.0+
-```
-
-There is no compatibility shim. Earlier still, 2.0.0 renamed the import package
-from `PyFetch` to `pyfetch` for PEP 8. See [CHANGELOG.md](CHANGELOG.md) for the
-full history.
-
 ## Library Usage
 
 You can also use Snaffle as a library in your Python projects.
