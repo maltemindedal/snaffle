@@ -9,7 +9,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from snaffle.cli import main, show_examples
+from snaffle.cli import EXAMPLES, main
+
+MAKE_REQUEST = "snaffle.http_client.HTTPClient.make_request"
 
 
 class TestCLI(unittest.TestCase):
@@ -28,21 +30,26 @@ class TestCLI(unittest.TestCase):
         )
 
     def test_help_command(self) -> None:
-        """Test the HELP command content."""
-        # Run help command with output suppressed
-        help_text = show_examples(suppress_output=True)
-        self.assertIn("Examples:", help_text)
-        self.assertIn("Normal GET request:", help_text)
-
-        # Verify main function with suppressed output
+        """Test the HELP command prints the usage examples."""
         with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-            main(["HELP"], suppress_output=True)
-            self.assertEqual("", fake_stdout.getvalue())
+            main(["HELP"])
 
-    @patch("snaffle.http_client.HTTPClient.get")
-    def test_get_command(self, mock_get: MagicMock) -> None:
+        output = fake_stdout.getvalue()
+        self.assertIn("Examples:", output)
+        self.assertIn("Normal GET request:", output)
+        self.assertIn(EXAMPLES, output)
+
+    def test_no_command_prints_help(self) -> None:
+        """Test a bare invocation falls back to the same help path."""
+        with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+            main([])
+
+        self.assertIn("Examples:", fake_stdout.getvalue())
+
+    @patch(MAKE_REQUEST)
+    def test_get_command(self, mock_request: MagicMock) -> None:
         """Test the GET command."""
-        mock_get.return_value = self._build_response(text="Success")
+        mock_request.return_value = self._build_response(text="Success")
 
         with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
             main(["GET", "https://api.example.com"])
@@ -52,11 +59,12 @@ class TestCLI(unittest.TestCase):
         self.assertIn("Headers:", output)
         self.assertIn("Response Body:", output)
         self.assertIn("Success", output)
+        mock_request.assert_called_once_with("GET", "https://api.example.com")
 
-    @patch("snaffle.http_client.HTTPClient.post")
-    def test_post_command(self, mock_post: MagicMock) -> None:
+    @patch(MAKE_REQUEST)
+    def test_post_command(self, mock_request: MagicMock) -> None:
         """Test the POST command."""
-        mock_post.return_value = self._build_response(
+        mock_request.return_value = self._build_response(
             status_code=201,
             text='{"created": true}',
             headers={"content-type": "application/json"},
@@ -68,15 +76,26 @@ class TestCLI(unittest.TestCase):
         output = fake_stdout.getvalue()
         self.assertIn("Status Code: 201", output)
         self.assertIn('"created": true', output)
-        mock_post.assert_called_once_with(
+        mock_request.assert_called_once_with(
+            "POST",
             "https://api.example.com",
             json={"key": "value"},
         )
 
-    @patch("snaffle.http_client.HTTPClient.post")
-    def test_progress_is_not_available_for_post(self, mock_post: MagicMock) -> None:
+    @patch(MAKE_REQUEST)
+    def test_lowercase_alias_sends_the_uppercase_method(
+        self, mock_request: MagicMock
+    ) -> None:
+        """Test `snaffle get` reaches the client as a normalized `GET`."""
+        mock_request.return_value = self._build_response(text="Success")
+
+        with patch("sys.stdout", new=io.StringIO()):
+            main(["get", "https://api.example.com"])
+
+        mock_request.assert_called_once_with("GET", "https://api.example.com")
+
+    def test_progress_is_not_available_for_post(self) -> None:
         """Test that --progress is not available for POST command."""
-        mock_post.return_value.text = "{}"
         with (
             self.assertRaises(SystemExit),
             patch("sys.stderr", new_callable=io.StringIO),
@@ -99,16 +118,6 @@ class TestCLI(unittest.TestCase):
 
         self.assertIn("Invalid JSON data", fake_stdout.getvalue())
 
-    @patch("snaffle.http_client.HTTPClient.get")
-    def test_suppress_output_hides_response_text(self, mock_get: MagicMock) -> None:
-        """Test suppress_output keeps stdout clean during command execution."""
-        mock_get.return_value = self._build_response(text="Success")
-
-        with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-            main(["GET", "https://api.example.com"], suppress_output=True)
-
-        self.assertEqual("", fake_stdout.getvalue())
-
     def test_usage_line_is_stable_across_entry_points(self) -> None:
         """Test help output names the command, not whatever launched it."""
         from snaffle.cli import create_parser
@@ -117,8 +126,10 @@ class TestCLI(unittest.TestCase):
 
     def test_help_path_does_not_import_requests(self) -> None:
         """Guard the start-up win: help must not drag in the HTTP stack."""
+        # The help text lands in the subprocess's captured stdout; only the
+        # exit status matters here.
         probe = (
-            "import sys; from snaffle.cli import main; main(['HELP'], True);"
+            "import sys; from snaffle.cli import main; main(['HELP']);"
             " sys.exit(1 if 'requests' in sys.modules else 0)"
         )
         result = subprocess.run(
