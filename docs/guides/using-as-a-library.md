@@ -60,13 +60,14 @@ with HTTPClient() as client:
     try:
         response = client.get("https://httpbin.org/status/500")
     except ResponseError as error:
-        # 4xx or 5xx. raise_for_status() fired.
+        # 4xx or 5xx. raise_for_status() fired. A transient status that was
+        # retried and never recovered arrives here too, carrying the real code.
         print(f"Server said no: {error}")
     except HTTPConnectionError as error:
-        # DNS failure, refused connection, or retries exhausted.
+        # DNS failure, refused connection, or a connect timeout.
         print(f"Could not reach it: {error}")
     except HTTPClientError as error:
-        # Anything else from requests, including timeouts.
+        # Anything else from requests -- a read timeout, too many redirects.
         print(f"Request failed: {error}")
 ```
 

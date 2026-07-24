@@ -15,9 +15,13 @@ import json
 import sys
 import textwrap
 from collections.abc import Sequence
-from typing import Any, NamedTuple, TypedDict
+from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
 
 from snaffle.exceptions import HTTPClientError
+
+if TYPE_CHECKING:
+    # Type-only, so the help paths still avoid importing the HTTP stack.
+    import requests
 
 
 class RequestKwargs(TypedDict, total=False):
@@ -86,23 +90,6 @@ COMMANDS: tuple[Command, ...] = (
 )
 
 
-def show_examples(suppress_output: bool = False) -> str:
-    """Prints usage examples for the snaffle CLI.
-
-    This function displays a list of common commands to guide the user.
-
-    Args:
-        suppress_output (bool, optional): If True, the output is not printed
-            to the console. Defaults to False.
-
-    Returns:
-        str: A string containing the usage examples.
-    """
-    if not suppress_output:
-        print(EXAMPLES)
-    return EXAMPLES
-
-
 def _parse_headers(header_args: Sequence[str] | None) -> dict[str, str] | None:
     """Parses repeated header arguments into a dictionary."""
     if not header_args:
@@ -134,7 +121,7 @@ def _parse_request_kwargs(args: argparse.Namespace) -> RequestKwargs:
     return kwargs
 
 
-def _emit_response(response: Any) -> None:
+def _emit_response(response: requests.Response) -> None:
     """Prints a formatted HTTP response using a single buffered write."""
     parts = [f"Status Code: {response.status_code}\n", "\nHeaders:\n"]
     parts.extend(f"{key}: {value}\n" for key, value in response.headers.items())
@@ -182,19 +169,6 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
-class CustomFormatter(argparse.HelpFormatter):
-    """Custom help formatter to support multi-line help messages.
-
-    This formatter allows help text to be split into multiple lines
-    by prefixing it with "R|".
-    """
-
-    def _split_lines(self, text: str, width: int) -> list[str]:
-        if text.startswith("R|"):
-            return text[2:].splitlines()
-        return super()._split_lines(text, width)
-
-
 def create_parser() -> argparse.ArgumentParser:
     """Creates and configures the argument parser for the CLI.
 
@@ -209,7 +183,6 @@ def create_parser() -> argparse.ArgumentParser:
         # print the same usage line instead of echoing the interpreter path.
         prog="snaffle",
         description="HTTP CLI client supporting GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS methods",
-        formatter_class=CustomFormatter,
         add_help=True,
     )
 
@@ -231,7 +204,7 @@ def create_parser() -> argparse.ArgumentParser:
             sub.add_argument(
                 "-d",
                 "--data",
-                help=f"R|JSON data for request body.\nExample: '{command.data_example}'",
+                help=f"JSON data for request body. Example: '{command.data_example}'",
             )
         if command.accepts_progress:
             sub.add_argument(
@@ -243,7 +216,7 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     """The main entry point for the snaffle CLI.
 
     This function parses command-line arguments, initializes the HTTP client,
@@ -252,8 +225,6 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
 
     Args:
         argv (Sequence[str], optional): Arguments to parse. Defaults to ``sys.argv``.
-        suppress_output (bool, optional): If True, suppresses all output to the
-            console, which is useful for testing. Defaults to False.
     """
     parser = create_parser()
     args = parser.parse_args(argv)
@@ -261,10 +232,9 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
     command = args.command.upper() if args.command else None
 
     if not command or command == "HELP":
-        if not suppress_output:
-            parser.print_help()
-            print("\n")
-        show_examples(suppress_output)
+        parser.print_help()
+        print("\n")
+        print(EXAMPLES)
         return
 
     # Deferred so the help paths above never import the HTTP stack.
@@ -278,19 +248,14 @@ def main(argv: Sequence[str] | None = None, suppress_output: bool = False) -> No
             verbose=args.verbose,
             show_progress=getattr(args, "progress", False),
         ) as client:
-            response = getattr(client, command.lower())(args.url, **kwargs)
-
-            if not suppress_output:
-                _emit_response(response)
+            _emit_response(client.make_request(command, args.url, **kwargs))
 
     except json.JSONDecodeError:
-        if not suppress_output:
-            print("Error: Invalid JSON data")
-            print("Make sure your JSON data is properly formatted.")
-            print('Example: \'{"key": "value"}\'')
+        print("Error: Invalid JSON data")
+        print("Make sure your JSON data is properly formatted.")
+        print('Example: \'{"key": "value"}\'')
         sys.exit(1)
     except (ValueError, HTTPClientError) as error:
         # json.JSONDecodeError is a ValueError, so it must be caught above this.
-        if not suppress_output:
-            print(f"Error: {error}")
+        print(f"Error: {error}")
         sys.exit(1)

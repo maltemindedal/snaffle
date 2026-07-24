@@ -91,12 +91,17 @@ with HTTPClient() as client:
 
 ## `Error: Failed to connect to ...`
 
-DNS failure, a refused connection, an unreachable host — or retries exhausted
-against a server that kept returning a transient status. Check the URL, then
-run with `-v` to see exactly what was attempted.
+DNS failure, a refused connection, an unreachable host, or a timeout while the
+connection was still being established. Check the URL, then run with `-v` to
+see exactly what was attempted and which `requests` exception was behind it.
 
 A connection failure is retried for every method, including `POST`: a request
 that never reached the server cannot have been acted on twice.
+
+A server that kept returning a transient status until the retries ran out does
+*not* land here — that ends as `Error: HTTP error occurred: 503 ...`, because
+the last response is reported rather than discarded. See the
+[Python API reference](../reference/python-api.md#make_request).
 
 ## A request hangs, then fails
 
