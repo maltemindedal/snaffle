@@ -8,7 +8,10 @@ annotations without extra configuration.
 from snaffle import HTTPClient, HTTPClientError, HTTPConnectionError, ResponseError
 ```
 
-`snaffle.__version__` holds the distribution version as a string.
+`snaffle.__version__` holds the distribution version as a string. It is read
+from the installed distribution's metadata rather than hard-coded, so the
+version is stated once, in `pyproject.toml`. Like `HTTPClient` it resolves on
+first access, so `import snaffle` does not pay for the metadata lookup.
 
 `HTTPClient` is resolved through a module-level `__getattr__` (PEP 562), so
 `import snaffle` does not import `requests`. The import happens on first
@@ -37,7 +40,7 @@ call `close()`.
 | --- | --- | --- | --- |
 | `timeout` | `int` | `30` | Seconds before a request times out. Must be `> 0`; `ValueError` otherwise. |
 | `retries` | `int` | `3` | Total attempts for a failed request, not retries after the first. Must be `> 0`; `ValueError` otherwise. Translated to `urllib3.util.retry.Retry(total=retries - 1)`. |
-| `verbose` | `bool` | `False` | Print the outgoing request, and the response status and headers, prefixed `[VERBOSE]`. |
+| `verbose` | `bool` | `False` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. |
 | `show_progress` | `bool` | `False` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. |
 
 Validation runs in `__init__`, before any network access.
@@ -50,7 +53,7 @@ Validation runs in `__init__`, before any network access.
 | `retries` | `int` | As constructed. |
 | `verbose` | `bool` | As constructed. |
 | `show_progress` | `bool` | As constructed. |
-| `allowed_methods` | `frozenset[str]` | Copy of `ALLOWED_METHODS`. |
+| `allowed_methods` | `frozenset[str]` | The methods this instance accepts. Initialised from `ALLOWED_METHODS` and read on every request. |
 | `session` | `requests.Session` | The pooled session, with the retrying adapter mounted on `http://` and `https://`. |
 
 The class defines no `__slots__`: instances stay weak-referenceable and accept
@@ -113,10 +116,24 @@ Raises:
 
 | Exception | When |
 | --- | --- |
-| `ValueError` | `method` is not in `ALLOWED_METHODS`. Raised before any network access. |
-| `ResponseError` | The response carried a 4xx or 5xx status. |
-| `HTTPConnectionError` | The connection failed, or the adapter exhausted its retries. |
-| `HTTPClientError` | Any other `requests.RequestException`, including timeouts. |
+| `ValueError` | `method` is not in `allowed_methods`. Raised before any network access. |
+| `ResponseError` | The response carried a 4xx or 5xx status — including a retryable status that was still failing on the last attempt. |
+| `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. |
+| `HTTPClientError` | Any other `requests.RequestException` — a read timeout, too many redirects, a malformed URL. |
+
+Two boundaries are easy to get wrong:
+
+- **Exhausted status retries surface as `ResponseError`, not `HTTPConnectionError`.**
+  The adapter is built with `raise_on_status=False`, so when a `503` is still a
+  `503` on the final attempt urllib3 returns that response rather than raising.
+  `raise_for_status()` then turns it into a `ResponseError` carrying the real
+  status, which is more useful than a generic connection failure. Only
+  *connection* retries exhaust into `RetryError`, and that is what the
+  `HTTPConnectionError` row above refers to.
+- **A connect timeout is an `HTTPConnectionError`; a read timeout is an
+  `HTTPClientError`.** `requests.exceptions.ConnectTimeout` subclasses
+  `ConnectionError`, so it is caught as a connection failure — which is what it
+  is. `ReadTimeout` does not, so it falls through to the general case.
 
 #### `close`
 
@@ -149,7 +166,7 @@ Defined in `snaffle.exceptions` and re-exported from `snaffle`.
 ```
 Exception
 └── HTTPClientError          base for everything this package raises
-    ├── HTTPConnectionError  the connection failed or retries were exhausted
+    ├── HTTPConnectionError  the connection failed, timed out, or was refused
     └── ResponseError        the server answered with a 4xx or 5xx status
 ```
 
@@ -183,6 +200,12 @@ with `backoff_factor=0.3`, `respect_retry_after_header=True`, and
 | Any other status (404, 401, ...) | not retried | not retried |
 
 The rationale is in [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
+
+`raise_on_status=False` decides what a caller sees when retries run out: a
+status that never recovered comes back as a response and becomes a
+`ResponseError`, while a connection that never succeeded raises `RetryError`
+inside the adapter and becomes an `HTTPConnectionError`. See
+[Raises](#make_request) above.
 
 Because retries happen inside the adapter, mocking `requests.Session.request`
 cannot observe them — see [contributing](../../CONTRIBUTING.md#testing-notes).

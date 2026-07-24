@@ -31,6 +31,11 @@ dependencies, so it is free.
 **`HTTPClient._create_progress_bar` imports `tqdm` inside the function.** A run
 without `--progress` never pays for it.
 
+**The same `__getattr__` resolves `__version__` from `importlib.metadata`.**
+Added later, when the hand-maintained `__version__` string was replaced by a
+read of the installed distribution's metadata. Deferring it keeps that read off
+every `import snaffle`, where nothing needs it.
+
 ## Consequences
 
 CLI start-up for `snaffle HELP` fell from 238 ms to 80 ms.
@@ -44,16 +49,22 @@ import path silently undoes it, and nothing about the code makes that obvious.
 Two things guard against it:
 
 - `tests/test_cli.py::test_help_path_does_not_import_requests` spawns a
-  subprocess, runs `main(['HELP'], True)`, and fails if `requests` is in
+  subprocess, runs `main(['HELP'])`, and fails if `requests` is in
   `sys.modules` afterwards.
+- `tests/test_init.py::test_import_does_not_pull_in_requests` does the same for
+  a bare `import snaffle`, covering library users rather than the CLI.
 - `CONTRIBUTING.md` states the convention: anything that would import
   `requests` at module scope should be deferred.
 
-Static analysis sees less. `__getattr__` returns `Any`, so `HTTPClient` is
-typed for consumers only via the `TYPE_CHECKING` import in `__init__.py`. That
-import exists solely to keep the annotation visible to type checkers.
+Static analysis sees less. `__getattr__` returns `Any`, so `HTTPClient` and
+`__version__` are typed for consumers only via the `TYPE_CHECKING` block in
+`__init__.py`. That block exists solely to keep the annotations visible to type
+checkers. `cli.py` uses the same device to annotate `_emit_response` with
+`requests.Response` without importing `requests` at run time — a
+`TYPE_CHECKING` import is not a violation of this ADR, because it never
+executes.
 
-Reading the code is marginally harder: three imports sit somewhere other than
+Reading the code is marginally harder: four imports sit somewhere other than
 the top of their file, each with a comment saying why.
 
 ## Alternatives considered

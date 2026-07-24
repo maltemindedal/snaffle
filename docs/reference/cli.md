@@ -1,7 +1,10 @@
 # CLI reference
 
 Every command, alias, and flag accepted by `snaffle`. Help text below is
-reproduced from the program's own `--help` output.
+reproduced from the program's own `--help` output, as rendered by the `argparse`
+in Python 3.13 and later. On 3.10 through 3.12 — both supported — argparse
+repeats the metavar after each short option, so `-t, --timeout TIMEOUT` appears
+as `-t TIMEOUT, --timeout TIMEOUT`. Nothing else differs.
 
 ## Invocation
 
@@ -53,7 +56,7 @@ Applied by `add_common_arguments` to all seven method subcommands.
 | `url` (positional) | string | required | Target URL. |
 | `-t`, `--timeout` | int | `30` | Request timeout in seconds. Passed to `requests` as the `timeout` argument. |
 | `-H`, `--header` | string | none | HTTP header in `Key: Value` format. Repeatable; each occurrence adds one header. A value without a `:` exits `1` with `Error: Invalid header format. Use 'Key: Value'.` |
-| `-v`, `--verbose` | flag | off | Log the outgoing request and the response status and headers to stdout, prefixed `[VERBOSE]`. |
+| `-v`, `--verbose` | flag | off | Log the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, to stdout, prefixed `[VERBOSE]`. |
 | `-h`, `--help` | flag | — | Print this subcommand's help and exit. |
 
 ### `-d`, `--data` — `POST`, `PUT`, `PATCH` only
@@ -120,7 +123,7 @@ options:
   -H, --header HEADER   HTTP header in 'Key: Value' format. Can be used
                         multiple times.
   -v, --verbose         Enable verbose logging for debugging.
-  -d, --data DATA       R|JSON data for request body. Example: '{"key":
+  -d, --data DATA       JSON data for request body. Example: '{"key":
                         "value"}'
 ```
 

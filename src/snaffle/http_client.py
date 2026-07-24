@@ -61,7 +61,8 @@ class HTTPClient:
         retries (int): The total number of attempts made for a failed request.
         verbose (bool): If True, enables detailed logging of requests and responses.
         show_progress (bool): If True, displays a progress bar for large downloads.
-        allowed_methods (frozenset): The supported HTTP methods.
+        allowed_methods (frozenset): The methods this instance accepts, read by
+            every request. Initialised from :attr:`ALLOWED_METHODS`.
         MIN_SIZE_FOR_PROGRESS (int): The minimum file size in bytes to trigger the progress bar.
     """
 
@@ -136,6 +137,7 @@ class HTTPClient:
         self.session.close()
 
     def __enter__(self) -> HTTPClient:
+        """Returns the client itself, for use as a context manager."""
         return self
 
     def __exit__(
@@ -144,13 +146,14 @@ class HTTPClient:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
+        """Closes the session on exit, suppressing nothing."""
         self.close()
 
     def _validate_method(self, method: str) -> str:
         """Normalizes and validates an HTTP method name."""
         normalized_method = method.upper()
-        if normalized_method not in self.ALLOWED_METHODS:
-            allowed_methods = ", ".join(sorted(self.ALLOWED_METHODS))
+        if normalized_method not in self.allowed_methods:
+            allowed_methods = ", ".join(sorted(self.allowed_methods))
             raise ValueError(
                 f"Unsupported HTTP method. Allowed methods: {allowed_methods}"
             )
