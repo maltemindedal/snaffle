@@ -7,11 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The `-d`/`--data` help text no longer prints a literal `R|` prefix:
+  `-d, --data DATA  R|JSON data for request body.` The marker belonged to a
+  custom help formatter that was only ever attached to the top-level parser,
+  never to the subcommands carrying the marker, so it leaked into the output it
+  was meant to control. Both the formatter and the marker are gone.
+- Corrected the documented exception mapping, which was wrong in two places.
+  Retries exhausted against a server that kept returning a transient status
+  raise `ResponseError` carrying the real status, not `HTTPConnectionError` —
+  the adapter is built with `raise_on_status=False`, so the last response is
+  reported rather than discarded. And a connect timeout raises
+  `HTTPConnectionError`, not `HTTPClientError`, because
+  `requests.exceptions.ConnectTimeout` subclasses `ConnectionError`. Only read
+  timeouts reach `HTTPClientError`. Behaviour is unchanged; the documentation
+  now matches it.
+- `HTTPClient.allowed_methods` is now the attribute method validation actually
+  reads. It was assigned in `__init__` and documented, but every request
+  checked the `ALLOWED_METHODS` class constant instead, so the instance
+  attribute did nothing.
+
 ### Changed
 
 - Relicensed from Apache-2.0 to MIT. The `license` field in `pyproject.toml`
   and the `LICENSE` file both carry the new terms; releases up to and including
   3.0.0 remain available under Apache-2.0.
+- `snaffle.__version__` is read from the installed distribution's metadata
+  instead of being hard-coded, so the version is declared once, in
+  `pyproject.toml`. It resolves lazily through the same PEP 562 hook as
+  `HTTPClient`, so `import snaffle` does not pay for the lookup. The value is
+  unchanged.
+- The CLI dispatches through `HTTPClient.make_request(method, url)` rather than
+  looking the per-verb method up by name with `getattr`.
 
 ### Added
 
@@ -19,6 +47,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reference, and the architecture, including decision records for the retry
   policy, the lazy imports, and the src-layout move. `README.md` is now a front
   door that links into it.
+- Test modules for `__init__.py` and `__main__.py`, the two source modules that
+  had none. These cover the `Ctrl+C`-exits-`0` contract of the console script,
+  the lazy resolution of `HTTPClient` and `__version__`, and a subprocess guard
+  that `import snaffle` does not pull in `requests`.
+
+### Removed
+
+- `snaffle.cli.show_examples` and the `suppress_output` parameter of
+  `snaffle.cli.main`. Neither was part of the documented public API — that is
+  `HTTPClient` and the three exceptions — and the flag existed only to quiet
+  tests that already redirect stdout.
 
 ## [3.0.0] - 2026-07-23
 

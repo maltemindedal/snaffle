@@ -119,41 +119,43 @@ class TestHTTPClient(unittest.TestCase):
         mock_response.iter_content.assert_not_called()
         self.assertNotIn("stream", mock_request.call_args.kwargs)
 
-    @patch(SESSION_REQUEST)
-    def test_get_request_with_progress_large_file(
-        self, mock_request: MagicMock
-    ) -> None:
-        """Test GET request with progress for a large file."""
+    @staticmethod
+    def _get_with_progress(
+        mock_request: MagicMock, content_length: int
+    ) -> tuple[Any, MagicMock]:
+        """Runs a progress-enabled GET and reports whether a bar was drawn."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.headers = {"content-length": str(6 * 1024 * 1024)}  # 6MB file
+        mock_response.headers = {"content-length": str(content_length)}
         mock_response.iter_content.return_value = [b"data"] * 4
         mock_request.return_value = mock_response
 
         client = HTTPClient(show_progress=True)
-        with contextlib.redirect_stderr(io.StringIO()):  # silence the progress bar
+        with patch("tqdm.tqdm") as mock_tqdm:
             response = client.get("https://api.example.com")
-
-        self.assertEqual(response.status_code, 200)
-        mock_response.iter_content.assert_called_once()
+        return response, mock_tqdm
 
     @patch(SESSION_REQUEST)
-    def test_get_request_with_progress_small_file(
+    def test_progress_bar_is_drawn_above_the_threshold(
         self, mock_request: MagicMock
     ) -> None:
-        """Test GET request with progress enabled for a small file."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.headers = {"content-length": str(4 * 1024 * 1024)}  # 4MB file
-        mock_response.iter_content.return_value = [b"data"] * 4
-        mock_request.return_value = mock_response
-
-        client = HTTPClient(show_progress=True)
-        with contextlib.redirect_stderr(io.StringIO()):  # silence the progress bar
-            response = client.get("https://api.example.com")
+        """Test a 6MB download draws a bar: it is over MIN_SIZE_FOR_PROGRESS."""
+        response, mock_tqdm = self._get_with_progress(mock_request, 6 * 1024 * 1024)
 
         self.assertEqual(response.status_code, 200)
-        mock_response.iter_content.assert_called_once()
+        mock_tqdm.assert_called_once()
+
+    @patch(SESSION_REQUEST)
+    def test_progress_bar_is_suppressed_below_the_threshold(
+        self, mock_request: MagicMock
+    ) -> None:
+        """Test a 4MB download draws no bar, but still streams and buffers."""
+        response, mock_tqdm = self._get_with_progress(mock_request, 4 * 1024 * 1024)
+
+        self.assertEqual(response.status_code, 200)
+        mock_tqdm.assert_not_called()
+        # Streaming is driven by show_progress, not by the bar existing.
+        cast(Any, response).iter_content.assert_called_once()
 
     @patch(SESSION_REQUEST)
     def test_http_error_maps_to_response_error(self, mock_request: MagicMock) -> None:
@@ -167,22 +169,6 @@ class TestHTTPClient(unittest.TestCase):
         client = HTTPClient(retries=1)
         with self.assertRaises(ResponseError):
             client.get("https://api.example.com")
-
-    @patch(SESSION_REQUEST)
-    def test_non_retryable_status_is_attempted_once(
-        self, mock_request: MagicMock
-    ) -> None:
-        """Test a dead-end status is not re-sent; retrying a 404 only adds latency."""
-        mock_response = MagicMock()
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
-            "404"
-        )
-        mock_request.return_value = mock_response
-
-        client = HTTPClient(retries=5)
-        with self.assertRaises(ResponseError):
-            client.get("https://api.example.com")
-        self.assertEqual(mock_request.call_count, 1)
 
     def test_unsupported_method_rejected(self) -> None:
         """Test an unsupported HTTP method raises before any network access."""

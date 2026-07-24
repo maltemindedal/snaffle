@@ -10,20 +10,28 @@ the way it is.
 ```
 src/snaffle/        The package. src-layout, so tests run against the
                     installed distribution rather than the working directory.
-  __init__.py       Public API. Resolves HTTPClient lazily (PEP 562).
+  __init__.py       Public API. Resolves HTTPClient and __version__ lazily
+                    (PEP 562).
   __main__.py       `python -m snaffle` and the `snaffle` console script.
   cli.py            Argument parsing and response rendering.
   http_client.py    The HTTP client, session pooling, and retry policy.
   exceptions.py     Exception hierarchy.
   py.typed          PEP 561 marker.
 tests/              One test module per source module: test_<module>.py.
+                    Dunder modules drop the underscores, so `__init__.py` is
+                    covered by `test_init.py` and `__main__.py` by
+                    `test_main.py`.
 ```
 
 Conventions:
 
 - Package and module names are short and all-lowercase (PEP 8). The import
   package is `snaffle`; there is no `Snaffle`.
-- Every public module, class, and function carries a docstring.
+- Every public module, class, and function carries a docstring — including
+  dunder methods such as `__enter__` and `__exit__`.
+- The version is declared once, in `pyproject.toml`. `snaffle.__version__`
+  reads it back from the installed distribution's metadata; do not hard-code
+  it in a second place.
 - Imports of first-party code are absolute (`from snaffle.exceptions import ...`),
   never relative.
 - Anything that would import `requests` at module scope should be deferred, so
