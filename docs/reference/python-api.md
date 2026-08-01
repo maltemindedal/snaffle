@@ -41,7 +41,7 @@ call `close()`.
 | `timeout` | `int` | `30` | Seconds before a request times out. Must be `> 0`; `ValueError` otherwise. |
 | `retries` | `int` | `3` | Total attempts for a failed request, not retries after the first. Must be `> 0`; `ValueError` otherwise. Translated to `urllib3.util.retry.Retry(total=retries - 1)`. |
 | `verbose` | `bool` | `False` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. |
-| `show_progress` | `bool` | `False` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. |
+| `show_progress` | `bool` | `False` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. A caller who passes `stream=True` opts out; see [`make_request`](#make_request). |
 
 Validation runs in `__init__`, before any network access.
 
@@ -100,17 +100,20 @@ client.make_request(method: str, url: str, **kwargs: Any) -> requests.Response
 ```
 
 The single path all seven wrappers take. It validates and upper-cases `method`,
-sets `stream=True` when `show_progress` is on and the method is `GET`, sends the
-request with the client's `timeout`, calls `raise_for_status()`, and translates
+sets `stream=True` when it is going to feed a progress bar, sends the request
+with the client's `timeout`, calls `raise_for_status()`, and translates
 `requests` exceptions into this package's hierarchy.
 
 When progress tracking is active it drains the body into `response._content` and
 marks it consumed, so `.text` and `.json()` serve the buffer rather than
 re-reading a drained socket.
 
-Passing `stream=True` yourself does not trigger that draining: you get an
-unconsumed response to iterate. Passing `stream=True` on a `GET` while
-`show_progress` is on has no additional effect — the client sets it anyway.
+Passing `stream=True` yourself opts out of that draining, whatever
+`show_progress` says: you get an unconsumed response to iterate, and no bar is
+drawn. The two cannot both hold — a bar is fed by reading the body, and reading
+the body is what you asked to do yourself. To have both, drive `tqdm` from your
+own loop; see
+[Download large files](../guides/downloading-large-files.md#combine-your-own-progress-bar-with-streaming).
 
 Raises:
 
@@ -156,8 +159,10 @@ with HTTPClient() as client:
 ### `ProgressBar`
 
 A `typing.Protocol` describing the two `tqdm` methods the client uses —
-`update(n)` and `close()`. Exported from `snaffle.http_client` for typing
-purposes; the client does not accept an injected progress bar.
+`update(n)` and `close()`. It is defined in the private `snaffle._download`
+module, alongside the code that builds a bar, and exported from
+`snaffle.http_client` for typing purposes — that remains its supported import
+path. The client does not accept an injected progress bar.
 
 ## Exceptions
 
