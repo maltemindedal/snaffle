@@ -12,23 +12,18 @@ of paying for a fresh handshake each time.
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Any, Protocol, cast
+from typing import Any
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from snaffle._download import ProgressBar, buffer_into, should_buffer
 from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 
-
-class ProgressBar(Protocol):
-    """Protocol for the subset of progress-bar methods used by the client."""
-
-    def update(self, n: float | None = 1) -> bool | None:
-        """Advance the progress display by the provided number of bytes."""
-
-    def close(self) -> None:
-        """Close the progress display and release any related resources."""
+#: `ProgressBar` lives in `_download` with the code that builds one, but it is
+#: documented as importable from here, so it stays part of this module's surface.
+__all__ = ["HTTPClient", "ProgressBar"]
 
 
 class HTTPClient:
@@ -159,71 +154,17 @@ class HTTPClient:
             )
         return normalized_method
 
-    def _create_progress_bar(self, total: int, desc: str) -> ProgressBar | None:
-        """Creates a `tqdm` progress bar if conditions are met.
-
-        A progress bar is created if `show_progress` is True and the file size (`total`)
-        is greater than or equal to `MIN_SIZE_FOR_PROGRESS`.
-
-        Args:
-            total (int): The total size of the file transfer in bytes.
-            desc (str): A description to display with the progress bar.
-
-        Returns:
-            ProgressBar or None: A `tqdm` progress bar instance or `None` if the conditions are not met.
-        """
-        if self.show_progress and total >= self.MIN_SIZE_FOR_PROGRESS:
-            # Imported lazily: tqdm costs ~15ms of startup that a CLI run
-            # without --progress should never pay.
-            from tqdm import tqdm
-
-            return cast(
-                ProgressBar,
-                tqdm(total=total, unit="B", unit_scale=True, desc=desc),
-            )
-        return None
-
-    def _stream_response(
-        self,
-        response: requests.Response,
-        progress_bar: ProgressBar | None = None,
-    ) -> bytes:
-        """Streams the response content and updates the progress bar.
-
-        This method iterates over the response content in chunks, allowing for efficient
-        handling of large responses and real-time progress updates.
-
-        Args:
-            response (requests.Response): The HTTP response object.
-            progress_bar (ProgressBar, optional): The progress bar instance to update. Defaults to None.
-
-        Returns:
-            bytes: The full response content as a byte string.
-        """
-        chunks: list[bytes] = []
-        append = chunks.append
-        update = progress_bar.update if progress_bar is not None else None
-
-        try:
-            for chunk in response.iter_content(chunk_size=self.DOWNLOAD_CHUNK_SIZE):
-                if not chunk:
-                    continue
-
-                append(chunk)
-                if update is not None:
-                    update(len(chunk))
-        finally:
-            if progress_bar is not None:
-                progress_bar.close()
-
-        return b"".join(chunks)
-
     def make_request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
         """Makes an HTTP request with retry logic and error handling.
 
         This is the core method for all HTTP operations performed by the client.
         Retries with exponential backoff are handled by the session's adapter;
         see the class docstring for which failures are retried for which methods.
+
+        A `GET` sent while `show_progress` is on streams its body and drains it
+        through a progress bar into a buffer, so the response that comes back is
+        fully read. A caller who passes `stream=True` opts out of that: the body
+        is left unread for them to iterate, and no bar is drawn.
 
         Args:
             method (str): The HTTP method to use (e.g., 'GET', 'POST').
@@ -242,12 +183,12 @@ class HTTPClient:
         normalized_method = self._validate_method(method)
         verbose = self.verbose
 
-        # We only stream on our own initiative when there is a progress bar to
-        # feed; otherwise letting requests read the body in one pass is faster
-        # and returns the connection to the pool immediately. A caller who asked
-        # for `stream=True` still gets an unconsumed response to iterate itself.
-        track_progress = normalized_method == "GET" and self.show_progress
-        if track_progress:
+        # Whether the body is worth streaming and draining ourselves is
+        # `_download`'s decision, including the opt-out for a caller who passed
+        # `stream=True` and will read the body themselves. All this method does
+        # is switch the transport into streaming mode when the answer is yes.
+        buffer_body = should_buffer(normalized_method, self.show_progress, kwargs)
+        if buffer_body:
             kwargs["stream"] = True
 
         if verbose:
@@ -266,13 +207,13 @@ class HTTPClient:
                     f"[VERBOSE] Received response with status {response.status_code} and headers {response.headers}"
                 )
 
-            if track_progress:
-                total = int(response.headers.get("content-length", 0))
-                progress_bar = self._create_progress_bar(total, f"Downloading {url}")
-                response._content = self._stream_response(response, progress_bar)
-                # Mark the body as fully read so `.text`/`.json()` serve the
-                # buffer we just built instead of re-reading a drained socket.
-                cast(Any, response)._content_consumed = True
+            if buffer_body:
+                buffer_into(
+                    response,
+                    chunk_size=self.DOWNLOAD_CHUNK_SIZE,
+                    min_size=self.MIN_SIZE_FOR_PROGRESS,
+                    desc=f"Downloading {url}",
+                )
 
             return response
 

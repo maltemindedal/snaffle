@@ -28,8 +28,10 @@ paths and argparse errors never reach it.
 access. The exceptions are imported eagerly — `exceptions.py` has no
 dependencies, so it is free.
 
-**`HTTPClient._create_progress_bar` imports `tqdm` inside the function.** A run
-without `--progress` never pays for it.
+**`snaffle._download` imports `tqdm` inside the function that builds the bar.**
+A run without `--progress` never pays for it. (This lived on
+`HTTPClient._create_progress_bar` until the progress-bar download moved into its
+own module; the deferral is unchanged, only its address.)
 
 **The same `__getattr__` resolves `__version__` from `importlib.metadata`.**
 Added later, when the hand-maintained `__version__` string was replaced by a

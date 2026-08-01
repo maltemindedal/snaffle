@@ -15,12 +15,15 @@ src/snaffle/        The package. src-layout, so tests run against the
   __main__.py       `python -m snaffle` and the `snaffle` console script.
   cli.py            Argument parsing and response rendering.
   http_client.py    The HTTP client, session pooling, and retry policy.
+  _download.py      Private. The progress-bar download: whether to drain a
+                    body, the size threshold, and the buffering.
   exceptions.py     Exception hierarchy.
   py.typed          PEP 561 marker.
 tests/              One test module per source module: test_<module>.py.
-                    Dunder modules drop the underscores, so `__init__.py` is
-                    covered by `test_init.py` and `__main__.py` by
-                    `test_main.py`.
+                    Dunder and private modules drop the underscores, so
+                    `__init__.py` is covered by `test_init.py`, `__main__.py`
+                    by `test_main.py`, and `_download.py` by
+                    `test_download.py`.
 ```
 
 Conventions:

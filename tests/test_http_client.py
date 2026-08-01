@@ -19,6 +19,9 @@ from snaffle.exceptions import HTTPConnectionError, ResponseError
 from snaffle.http_client import HTTPClient
 
 SESSION_REQUEST = "requests.Session.request"
+#: Patched where it is used, not where it is defined: `http_client` imports the
+#: name. What it does with a body is `tests/test_download.py`'s business.
+BUFFER_INTO = "snaffle.http_client.buffer_into"
 
 
 class TestHTTPClient(unittest.TestCase):
@@ -83,79 +86,79 @@ class TestHTTPClient(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.text, "")
 
+    @patch(BUFFER_INTO)
     @patch(SESSION_REQUEST)
-    def test_get_request_with_progress(self, mock_request: MagicMock) -> None:
-        """Test GET request with progress enabled streams and buffers content."""
+    def test_get_request_with_progress_streams_and_delegates_the_drain(
+        self, mock_request: MagicMock, mock_buffer_into: MagicMock
+    ) -> None:
+        """Test a progress-enabled GET streams and hands the body to `_download`."""
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.headers = {"content-length": "1024"}
-        mock_response.iter_content.return_value = [b"data"] * 4
         mock_request.return_value = mock_response
 
         client = HTTPClient(show_progress=True)
-        with contextlib.redirect_stderr(io.StringIO()):  # silence the progress bar
-            response = client.get("https://api.example.com")
+        response = client.get("https://api.example.com")
 
-        self.assertEqual(response.status_code, 200)
-        mock_response.iter_content.assert_called_once()
-        self.assertEqual(response._content, b"datadatadatadata")
-        self.assertTrue(cast(Any, response)._content_consumed)
+        self.assertIs(response, mock_response)
         self.assertTrue(mock_request.call_args.kwargs["stream"])
+        mock_buffer_into.assert_called_once_with(
+            mock_response,
+            chunk_size=HTTPClient.DOWNLOAD_CHUNK_SIZE,
+            min_size=HTTPClient.MIN_SIZE_FOR_PROGRESS,
+            desc="Downloading https://api.example.com",
+        )
 
+    @patch(BUFFER_INTO)
     @patch(SESSION_REQUEST)
     def test_get_request_without_progress_does_not_stream(
-        self, mock_request: MagicMock
+        self, mock_request: MagicMock, mock_buffer_into: MagicMock
     ) -> None:
-        """Test GET request without progress skips streaming entirely."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.headers = {"content-length": "1024"}
-        mock_request.return_value = mock_response
+        """Test GET request without progress neither streams nor drains."""
+        mock_request.return_value.status_code = 200
 
         client = HTTPClient(show_progress=False)
         response = client.get("https://api.example.com")
 
         self.assertEqual(response.status_code, 200)
-        mock_response.iter_content.assert_not_called()
         self.assertNotIn("stream", mock_request.call_args.kwargs)
+        mock_buffer_into.assert_not_called()
 
-    @staticmethod
-    def _get_with_progress(
-        mock_request: MagicMock, content_length: int
-    ) -> tuple[Any, MagicMock]:
-        """Runs a progress-enabled GET and reports whether a bar was drawn."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.headers = {"content-length": str(content_length)}
-        mock_response.iter_content.return_value = [b"data"] * 4
-        mock_request.return_value = mock_response
+    @patch(BUFFER_INTO)
+    @patch(SESSION_REQUEST)
+    def test_explicit_stream_suppresses_the_progress_drain(
+        self, mock_request: MagicMock, mock_buffer_into: MagicMock
+    ) -> None:
+        """Test `stream=True` wins over `show_progress`, leaving the body unread.
+
+        `TestProgressAgainstRealServer` proves the same thing against a socket;
+        this asserts the client asked for it.
+        """
+        mock_request.return_value.status_code = 200
 
         client = HTTPClient(show_progress=True)
-        with patch("tqdm.tqdm") as mock_tqdm:
-            response = client.get("https://api.example.com")
-        return response, mock_tqdm
+        client.get("https://api.example.com", stream=True)
 
+        self.assertTrue(mock_request.call_args.kwargs["stream"])
+        mock_buffer_into.assert_not_called()
+
+    @patch(BUFFER_INTO)
     @patch(SESSION_REQUEST)
-    def test_progress_bar_is_drawn_above_the_threshold(
-        self, mock_request: MagicMock
+    def test_class_constant_overrides_reach_the_download(
+        self, mock_request: MagicMock, mock_buffer_into: MagicMock
     ) -> None:
-        """Test a 6MB download draws a bar: it is over MIN_SIZE_FOR_PROGRESS."""
-        response, mock_tqdm = self._get_with_progress(mock_request, 6 * 1024 * 1024)
+        """Test the documented subclassing hook still tunes the download."""
 
-        self.assertEqual(response.status_code, 200)
-        mock_tqdm.assert_called_once()
+        class SmallBarClient(HTTPClient):
+            """A subclass with the documented class-attribute overrides applied."""
 
-    @patch(SESSION_REQUEST)
-    def test_progress_bar_is_suppressed_below_the_threshold(
-        self, mock_request: MagicMock
-    ) -> None:
-        """Test a 4MB download draws no bar, but still streams and buffers."""
-        response, mock_tqdm = self._get_with_progress(mock_request, 4 * 1024 * 1024)
+            DOWNLOAD_CHUNK_SIZE = 1024
+            MIN_SIZE_FOR_PROGRESS = 1
 
-        self.assertEqual(response.status_code, 200)
-        mock_tqdm.assert_not_called()
-        # Streaming is driven by show_progress, not by the bar existing.
-        cast(Any, response).iter_content.assert_called_once()
+        mock_request.return_value.status_code = 200
+        SmallBarClient(show_progress=True).get("https://api.example.com")
+
+        self.assertEqual(mock_buffer_into.call_args.kwargs["chunk_size"], 1024)
+        self.assertEqual(mock_buffer_into.call_args.kwargs["min_size"], 1)
 
     @patch(SESSION_REQUEST)
     def test_http_error_maps_to_response_error(self, mock_request: MagicMock) -> None:
@@ -361,6 +364,71 @@ class TestRetryAgainstRealServer(unittest.TestCase):
                     client.get(f"{self.base_url}/missing")
             self.assertIs(client.session.get_adapter(self.base_url), pool)
         self.assertEqual(len(self.hits), 4)
+
+
+class TestProgressAgainstRealServer(unittest.TestCase):
+    """The streaming opt-out, verified against a real socket.
+
+    A `Session.request` mock cannot show this. The defect it guards was a body
+    drained out from under a caller who asked to stream it, and only a real
+    socket has a body to drain. The payload is deliberately over
+    `MIN_SIZE_FOR_PROGRESS`, so the progress path is fully live.
+    """
+
+    body: ClassVar[bytes] = b"snaffle!" * (6 * 1024 * 1024 // 8)
+    server: ClassVar[ThreadingHTTPServer]
+    base_url: ClassVar[str]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        body = cls.body
+
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *args: Any) -> None:
+                pass
+
+            def do_GET(self) -> None:
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        class Server(ThreadingHTTPServer):
+            def handle_error(self, *args: Any) -> None:
+                pass
+
+        cls.server = Server(("127.0.0.1", 0), Handler)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.server.shutdown()
+        cls.server.server_close()
+
+    def test_explicit_stream_leaves_the_body_unread(self) -> None:
+        """Test show_progress no longer drains a response asked to stream.
+
+        Regression: the progress path ignored the caller's `stream=True` and
+        consumed the body anyway, so the returned response had nothing left to
+        iterate.
+        """
+        with HTTPClient(show_progress=True) as client:
+            response = client.get(f"{self.base_url}/large", stream=True)
+
+            self.assertFalse(cast(Any, response)._content_consumed)
+            self.assertEqual(b"".join(response.iter_content(65536)), self.body)
+
+    def test_progress_download_returns_a_read_response(self) -> None:
+        """Test the buffering path still hands back a fully-read response."""
+        with HTTPClient(show_progress=True) as client:
+            with contextlib.redirect_stderr(io.StringIO()):  # silence the bar
+                response = client.get(f"{self.base_url}/large")
+
+            self.assertTrue(cast(Any, response)._content_consumed)
+            self.assertEqual(response.content, self.body)
 
 
 if __name__ == "__main__":

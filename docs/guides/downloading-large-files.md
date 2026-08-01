@@ -56,8 +56,9 @@ response is closed. Consume it promptly, or close it.
 
 ## Combine your own progress bar with streaming
 
-`show_progress` only drives the client's internal bar, which buffers. To stream
-*and* display progress, drive `tqdm` yourself:
+`show_progress` only drives the client's internal bar, which buffers. Passing
+`stream=True` switches that bar off, so the two never contend for the body. To
+stream *and* display progress, drive `tqdm` yourself:
 
 ```python
 from snaffle import HTTPClient
@@ -89,6 +90,12 @@ changes `GET` in three ways:
 
 The result is a fully-read response, identical in behaviour to a non-streamed
 one. The memory cost is the whole body.
+
+Passing `stream=True` yourself opts out of all three. The body is left unread
+for you to iterate and no bar is drawn — a bar is fed by reading the body, and
+reading it is what you asked to do yourself. See
+[Combine your own progress bar with streaming](#combine-your-own-progress-bar-with-streaming)
+for having both.
 
 Without `show_progress`, `GET` does not stream at all: letting `requests` read
 the body in one pass is faster and returns the connection to the pool
