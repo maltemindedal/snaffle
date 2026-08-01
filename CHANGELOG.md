@@ -27,6 +27,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads. It was assigned in `__init__` and documented, but every request
   checked the `ALLOWED_METHODS` class constant instead, so the instance
   attribute did nothing.
+- `stream=True` is no longer ignored when `show_progress` is on. A `GET` the
+  caller asked to stream now comes back unread, as the API reference, the
+  architecture overview and ADR 0001 all already claimed; previously the
+  progress bar drained the body anyway and the caller got nothing to iterate.
+  A caller who wants both a stream and a bar drives `tqdm` themselves, which is
+  what the large-download guide has always said.
+- The exit-code table in the CLI reference omitted a path: an argument value the
+  client rejects, such as `-t 0`, exits `1` through a `ValueError` from
+  `HTTPClient.__init__`. It is now listed, along with a non-integer `-t` under
+  code `2`. Behaviour is unchanged; the documentation now matches it.
 
 ### Changed
 
@@ -40,6 +50,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged.
 - The CLI dispatches through `HTTPClient.make_request(method, url)` rather than
   looking the per-verb method up by name with `getattr`.
+- The progress-bar download moved into a private `snaffle._download` module,
+  which owns the decision to drain, the size threshold, the deferred `tqdm`
+  import, the chunk loop, and the write-back onto the response.
+  `DOWNLOAD_CHUNK_SIZE` and `MIN_SIZE_FOR_PROGRESS` remain public attributes of
+  `HTTPClient`, and `ProgressBar` is still importable from
+  `snaffle.http_client`. The private `HTTPClient._stream_response` and
+  `HTTPClient._create_progress_bar` are gone.
+- `snaffle.cli.main` returns an exit code instead of calling `sys.exit`, and
+  `snaffle.__main__.run` is now the single process-level exit point, so the
+  error-to-code mapping is one visible thing in one module. `argparse` still
+  exits `2` from inside `parse_args`; that is a distinct mechanism and is
+  documented rather than routed through the return value. Observable behaviour
+  is unchanged — same messages, same codes, same stdout — but code that
+  embedded `cli.main` and caught `SystemExit` to detect an error must check the
+  return value instead.
+- The seven verb methods (`get`, `post`, `put`, `patch`, `delete`, `head`,
+  `options`) carry a one-line docstring pointing at `make_request` rather than
+  restating its arguments and return value seven times over. Signatures and
+  behaviour are unchanged; `help()` output is shorter.
 
 ### Added
 
@@ -51,6 +80,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   had none. These cover the `Ctrl+C`-exits-`0` contract of the console script,
   the lazy resolution of `HTTPClient` and `__version__`, and a subprocess guard
   that `import snaffle` does not pull in `requests`.
+- `HTTPClient` accepts a `session`, so the transport can be substituted at the
+  client's own interface instead of by patching `requests.Session.request`.
+  That patch point sits below the client and above the adapter, which is where
+  urllib3 retries, so it can never observe a retry — the project shipped a false
+  claim about `POST` retry behaviour on exactly that mistake. A session mounted
+  with a test adapter now observes retries with no socket opened. The parameter
+  is last and defaults to `None`, which builds the pooled, retrying session as
+  before; a session passed in is used as it arrives, so `retries` does not apply
+  to it, and the client closes only a session it built. See ADR 0004.
+- ADR 0004, recording the session seam. It supersedes only the mitigation in
+  ADR 0001's Consequences — documenting the mock trap — and not its decision.
 
 ### Removed
 
