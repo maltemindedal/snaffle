@@ -93,9 +93,10 @@ already imports `requests` at module scope, and `http_client` is itself imported
 lazily, which is what ADR 0002 actually protects; the guards in
 `tests/test_init.py` and `tests/test_cli.py` still pass unchanged. But the
 *interface* now mentions a third-party type on the way in, where before it did
-so only on the way out, as the `requests.Response` every request method returns. Snaffle is a thin layer over `requests` and has never
-hidden it, so this states something that was already true; it is still a
-widening of what the constructor commits to.
+so only on the way out, as the `requests.Response` every request method returns.
+Snaffle is a thin layer over `requests` and has never hidden it, so this states
+something that was already true; it is still a widening of what the constructor
+commits to.
 
 Two rules now have to be documented rather than inferred: that a supplied
 session does not get `retries`, and that the client will not close it. Both are

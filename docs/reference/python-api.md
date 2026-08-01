@@ -195,10 +195,11 @@ with HTTPClient() as client:
 ### `ProgressBar`
 
 A `typing.Protocol` describing the two `tqdm` methods the client uses —
-`update(n)` and `close()`. It is defined in the private `snaffle._download`
-module, alongside the code that builds a bar, and exported from
-`snaffle.http_client` for typing purposes — that remains its supported import
-path. The client does not accept an injected progress bar.
+`update(n)` and `close()`. It is defined in `snaffle.http_client`, which is its
+supported import path. The private `snaffle._download` module builds the bars
+and refers to the protocol under `TYPE_CHECKING` only, so the run-time
+dependency between the two still runs one way. The client does not accept an
+injected progress bar.
 
 ## Exceptions
 
