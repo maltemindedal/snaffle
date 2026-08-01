@@ -4,7 +4,7 @@ Snaffle is a thin, opinionated layer over `requests` and `urllib3`. It exists to
 make two things convenient: a readable HTTP CLI, and a client whose retry and
 pooling behaviour is decided once rather than at every call site.
 
-It is deliberately small — five modules, no plugins, no configuration files, no
+It is deliberately small — six modules, no plugins, no configuration files, no
 state on disk.
 
 ## System context
@@ -28,14 +28,27 @@ artifact is a wheel.
 | Module | Responsibility |
 | --- | --- |
 | `__init__.py` | Public API surface. Re-exports the exceptions eagerly and resolves `HTTPClient` lazily via PEP 562. |
-| `__main__.py` | Process entry point for both `python -m snaffle` and the `snaffle` console script. Its only logic is turning `KeyboardInterrupt` into a clean exit. |
+| `__main__.py` | Process entry point for both `python -m snaffle` and the `snaffle` console script. The single process-level exit point: it turns `KeyboardInterrupt` into a clean exit, and `cli.main`'s returned code into the process status. |
 | `cli.py` | Argument parsing, header and body parsing, response rendering, error-to-exit-code mapping. Imports `HTTPClient` only after the help paths have been ruled out. |
-| `http_client.py` | The client: session construction, retry policy, method validation, progress streaming, exception translation. |
+| `http_client.py` | The client: session construction, retry policy, method validation, exception translation. Asks `_download` whether to buffer a body, and hands it the body when the answer is yes. |
+| `_download.py` | Private. Owns the progress-bar download whole: whether to drain, the size threshold, the deferred `tqdm` import, the chunk loop, and writing the buffer back onto the response. |
 | `exceptions.py` | Three exception classes. No dependencies, not even on `requests`. |
 
-The dependency graph is acyclic and shallow. `exceptions` depends on nothing;
-`http_client` depends on `exceptions` and the HTTP stack; `cli` depends on
-`exceptions` at import time and on `http_client` at call time.
+The run-time dependency graph is acyclic and shallow. `exceptions` depends on
+nothing; `_download` depends on the HTTP stack; `http_client` depends on
+`exceptions`, `_download`, and the HTTP stack; `cli` depends on `exceptions` at
+import time and on `http_client` at call time.
+
+The one edge that runs the other way is type-only: `_download` refers to
+`http_client.ProgressBar` under `TYPE_CHECKING`, because the protocol is
+documented as part of `http_client`'s surface while the code that builds a bar
+lives in `_download`. Nothing is imported at run time, so the graph above holds.
+
+`_download` imports `requests` at module scope, as `http_client` does. That is
+safe because nothing reaches `_download` except through `http_client`, and
+`http_client` itself is only imported once a request is actually being made —
+see [ADR 0002](decisions/0002-lazy-imports-on-the-cli-help-path.md). `tqdm`
+stays deferred inside `_download`, to a function.
 
 Imports of first-party code are absolute throughout — `from snaffle.exceptions
 import ...`, never relative.
@@ -91,6 +104,14 @@ deliberate trade — it makes the common case (a batch of requests to one host)
 fast, at the price of requiring a context manager. See
 [ADR 0001](decisions/0001-selective-retries-and-connection-pooling.md).
 
+The client builds that session unless one is passed to the constructor, which is
+where the transport is substituted — including in tests, where it is the only
+seam above the socket that leaves the retry loop intact. A caller-supplied
+session brings its own adapters, so it brings its own retry policy and pool;
+`retries` does not reach it. Ownership follows construction: **a client closes
+only a session it built**, because one it was given may be shared. See
+[ADR 0004](decisions/0004-inject-the-session.md).
+
 ### Retries are selective, and asymmetric by method
 
 Only connection failures and the transient statuses in `RETRY_STATUSES` are
@@ -113,8 +134,17 @@ guarded by a test that runs a subprocess and asserts `requests` is absent from
 ### `GET` streams only when something consumes the stream
 
 Streaming a body that nothing reads holds a connection open for the lifetime of
-the response. `GET` therefore streams only when a progress bar is being fed. A
-caller who passes `stream=True` explicitly still gets an unconsumed response.
+the response. `GET` therefore streams on the client's own initiative only when a
+progress bar is being fed. A caller who passes `stream=True` explicitly still
+gets an unconsumed response: their request wins over the bar, because a bar is
+fed by reading the body and reading it is what they asked to do themselves.
+
+That whole decision lives in `_download.should_buffer`, not in `make_request`.
+Draining reaches past the seam three times — it forces `stream=True`, writes
+`response._content`, and writes `response._content_consumed` — so it is worth a
+module with a name on it rather than four inline branches. An earlier revision
+had it inline, and the `stream=True` opt-out above was documented in three
+places while the code did the opposite.
 
 ### The distribution is typed
 
@@ -124,16 +154,24 @@ checkers use the annotations with no configuration.
 
 ## Testing strategy
 
-Tests are `unittest`, one module per source module. They split into three
+Tests are `unittest`, one module per source module. They split into four
 kinds, and the split is load-bearing:
 
 - **Mocked at `Session.request`** — most client and CLI tests. Fast, and
   correct for anything *above* the adapter.
 - **Asserted against `urllib3.util.retry.Retry` directly** — `TestRetryPolicy`.
   Verifies the policy object without any I/O.
+- **Injected at the session seam** — `TestInjectedSession` and
+  `TestRetryWithoutASocket` pass a session to the constructor. Because the
+  substitution happens at the client's interface rather than below it, the
+  adapter and urllib3's retry loop are still there: `TestRetryWithoutASocket`
+  mounts a real adapter over a pool that fails every connection attempt, and
+  counts them, without opening a socket.
 - **Against a real socket** — `TestRetryAgainstRealServer` starts a
-  `ThreadingHTTPServer` on an ephemeral port and counts arriving requests. This
-  is the only way to observe retries end to end.
+  `ThreadingHTTPServer` on an ephemeral port and counts arriving requests. Its
+  subject is the whole stack, end to end. `TestProgressAgainstRealServer` does
+  the same for the streaming opt-out, which needs a real body to prove the
+  socket is still unread.
 
 The class docstring on `TestRetryPolicy` records why: an earlier revision
 claimed "a `POST` is never silently re-sent" on the strength of a

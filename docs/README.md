@@ -53,6 +53,7 @@ way it is.
 | [0001 — Selective retries and a pooled session](architecture/decisions/0001-selective-retries-and-connection-pooling.md) | Why retries moved into the adapter, why only seven statuses are retried, why a `POST` is retried on connection failure but never replayed, and why a client must now be closed. |
 | [0002 — Lazy imports on the CLI help path](architecture/decisions/0002-lazy-imports-on-the-cli-help-path.md) | Why `requests` is imported in three unusual places, and what guards the saving. |
 | [0003 — src-layout and a lowercase package name](architecture/decisions/0003-src-layout-and-a-lowercase-package-name.md) | Why the package moved under `src/`, why it was renamed twice, and why both renames were major versions. |
+| [0004 — Inject the session](architecture/decisions/0004-inject-the-session.md) | Why the constructor accepts a session, why the client closes only the one it built, why `retries` does not reach an injected one, and what that costs the public interface. |
 
 ## Project documents
 

@@ -68,6 +68,9 @@ against such a mock and shipped a false claim in the README on the strength of
 it. The project now tests retry behaviour against a real socket
 (`TestRetryAgainstRealServer`) or against the `Retry` object directly
 (`TestRetryPolicy`), and `CONTRIBUTING.md` records the trap.
+[ADR 0004](0004-inject-the-session.md) adds a third option — passing a session
+to the constructor — and supersedes this mitigation, though not the decision
+above.
 
 `--progress` downloads hold a larger working set, from the bigger chunk size.
 
