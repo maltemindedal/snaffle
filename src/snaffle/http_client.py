@@ -12,17 +12,26 @@ of paying for a fresh handshake each time.
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Any, Protocol, cast
+from typing import Any, Protocol
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from snaffle._download import buffer_into, should_buffer
 from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
+
+__all__ = ["HTTPClient", "ProgressBar"]
 
 
 class ProgressBar(Protocol):
-    """Protocol for the subset of progress-bar methods used by the client."""
+    """Protocol for the subset of progress-bar methods used by the client.
+
+    Defined here because it is documented as part of this module's surface.
+    `_download` builds the bars and refers to this protocol under
+    `TYPE_CHECKING` only, so the dependency between the two modules still runs
+    one way at run time.
+    """
 
     def update(self, n: float | None = 1) -> bool | None:
         """Advance the progress display by the provided number of bytes."""
@@ -43,6 +52,17 @@ class HTTPClient:
 
         with HTTPClient() as client:
             client.get("https://example.com")
+
+    The session is built by :meth:`_build_session` unless one is passed to the
+    constructor. **A client closes only a session it built**: one it was given
+    belongs to the caller, who may be sharing it, and closing it would pull the
+    pool out from under them.
+
+    Passing a session is how the transport is substituted without patching
+    `requests.Session.request` -- a mock there sits above the adapter and cannot
+    observe a retry. An injected session brings its own adapters, so it also
+    brings its own retry policy and connection pool; `retries` builds the default
+    session and does not reach one supplied here.
 
     Retries use exponential backoff and are applied to:
 
@@ -84,6 +104,7 @@ class HTTPClient:
         retries: int = 3,
         verbose: bool = False,
         show_progress: bool = False,
+        session: requests.Session | None = None,
     ) -> None:
         """Initializes the HTTPClient with configuration options.
 
@@ -92,6 +113,12 @@ class HTTPClient:
             retries (int, optional): The total number of attempts for failed requests. Defaults to 3.
             verbose (bool, optional): Whether to enable verbose logging. Defaults to False.
             show_progress (bool, optional): Whether to show a progress bar for large downloads. Defaults to False.
+            session (requests.Session, optional): A session to send through. Defaults
+                to one built by :meth:`_build_session`. A session passed here is
+                used as it arrives: `retries` builds the default session and is not
+                applied to this one, because the retry policy and the connection
+                pool both come from the session's mounted adapters. The client does
+                not close a session it did not build; see :meth:`close`.
         """
         if timeout <= 0:
             raise ValueError("timeout must be greater than 0")
@@ -103,7 +130,8 @@ class HTTPClient:
         self.verbose = verbose
         self.show_progress = show_progress
         self.allowed_methods = self.ALLOWED_METHODS
-        self.session = self._build_session(retries)
+        self._owns_session = session is None
+        self.session = self._build_session(retries) if session is None else session
 
     @classmethod
     def _build_session(cls, retries: int) -> requests.Session:
@@ -133,8 +161,14 @@ class HTTPClient:
         return session
 
     def close(self) -> None:
-        """Closes the underlying session and releases pooled connections."""
-        self.session.close()
+        """Closes the session this client built, releasing pooled connections.
+
+        A session passed to the constructor belongs to the caller, who may be
+        sharing it with other clients, so it is left open. Closing it is theirs
+        to do.
+        """
+        if self._owns_session:
+            self.session.close()
 
     def __enter__(self) -> HTTPClient:
         """Returns the client itself, for use as a context manager."""
@@ -146,7 +180,7 @@ class HTTPClient:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        """Closes the session on exit, suppressing nothing."""
+        """Calls :meth:`close` on exit, suppressing nothing."""
         self.close()
 
     def _validate_method(self, method: str) -> str:
@@ -159,71 +193,17 @@ class HTTPClient:
             )
         return normalized_method
 
-    def _create_progress_bar(self, total: int, desc: str) -> ProgressBar | None:
-        """Creates a `tqdm` progress bar if conditions are met.
-
-        A progress bar is created if `show_progress` is True and the file size (`total`)
-        is greater than or equal to `MIN_SIZE_FOR_PROGRESS`.
-
-        Args:
-            total (int): The total size of the file transfer in bytes.
-            desc (str): A description to display with the progress bar.
-
-        Returns:
-            ProgressBar or None: A `tqdm` progress bar instance or `None` if the conditions are not met.
-        """
-        if self.show_progress and total >= self.MIN_SIZE_FOR_PROGRESS:
-            # Imported lazily: tqdm costs ~15ms of startup that a CLI run
-            # without --progress should never pay.
-            from tqdm import tqdm
-
-            return cast(
-                ProgressBar,
-                tqdm(total=total, unit="B", unit_scale=True, desc=desc),
-            )
-        return None
-
-    def _stream_response(
-        self,
-        response: requests.Response,
-        progress_bar: ProgressBar | None = None,
-    ) -> bytes:
-        """Streams the response content and updates the progress bar.
-
-        This method iterates over the response content in chunks, allowing for efficient
-        handling of large responses and real-time progress updates.
-
-        Args:
-            response (requests.Response): The HTTP response object.
-            progress_bar (ProgressBar, optional): The progress bar instance to update. Defaults to None.
-
-        Returns:
-            bytes: The full response content as a byte string.
-        """
-        chunks: list[bytes] = []
-        append = chunks.append
-        update = progress_bar.update if progress_bar is not None else None
-
-        try:
-            for chunk in response.iter_content(chunk_size=self.DOWNLOAD_CHUNK_SIZE):
-                if not chunk:
-                    continue
-
-                append(chunk)
-                if update is not None:
-                    update(len(chunk))
-        finally:
-            if progress_bar is not None:
-                progress_bar.close()
-
-        return b"".join(chunks)
-
     def make_request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
         """Makes an HTTP request with retry logic and error handling.
 
         This is the core method for all HTTP operations performed by the client.
         Retries with exponential backoff are handled by the session's adapter;
         see the class docstring for which failures are retried for which methods.
+
+        A `GET` sent while `show_progress` is on streams its body and drains it
+        through a progress bar into a buffer, so the response that comes back is
+        fully read. A caller who passes `stream=True` opts out of that: the body
+        is left unread for them to iterate, and no bar is drawn.
 
         Args:
             method (str): The HTTP method to use (e.g., 'GET', 'POST').
@@ -242,12 +222,12 @@ class HTTPClient:
         normalized_method = self._validate_method(method)
         verbose = self.verbose
 
-        # We only stream on our own initiative when there is a progress bar to
-        # feed; otherwise letting requests read the body in one pass is faster
-        # and returns the connection to the pool immediately. A caller who asked
-        # for `stream=True` still gets an unconsumed response to iterate itself.
-        track_progress = normalized_method == "GET" and self.show_progress
-        if track_progress:
+        # Whether the body is worth streaming and draining ourselves is
+        # `_download`'s decision, including the opt-out for a caller who passed
+        # `stream=True` and will read the body themselves. All this method does
+        # is switch the transport into streaming mode when the answer is yes.
+        buffer_body = should_buffer(normalized_method, self.show_progress, kwargs)
+        if buffer_body:
             kwargs["stream"] = True
 
         if verbose:
@@ -266,13 +246,13 @@ class HTTPClient:
                     f"[VERBOSE] Received response with status {response.status_code} and headers {response.headers}"
                 )
 
-            if track_progress:
-                total = int(response.headers.get("content-length", 0))
-                progress_bar = self._create_progress_bar(total, f"Downloading {url}")
-                response._content = self._stream_response(response, progress_bar)
-                # Mark the body as fully read so `.text`/`.json()` serve the
-                # buffer we just built instead of re-reading a drained socket.
-                cast(Any, response)._content_consumed = True
+            if buffer_body:
+                buffer_into(
+                    response,
+                    chunk_size=self.DOWNLOAD_CHUNK_SIZE,
+                    min_size=self.MIN_SIZE_FOR_PROGRESS,
+                    desc=f"Downloading {url}",
+                )
 
             return response
 
@@ -292,86 +272,35 @@ class HTTPClient:
                 print(f"[VERBOSE] RequestException: {e}")
             raise HTTPClientError(f"Request failed: {e!s}") from e
 
+    # The seven verb methods below are `make_request` with the method fixed.
+    # They carry no behaviour of their own, so they do not restate its contract:
+    # arguments, return value and exceptions are documented once, there and in
+    # `docs/reference/python-api.md`, rather than seven times over here.
+
     def get(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a GET request to the specified URL.
-
-        Args:
-            url (str): The URL to send the GET request to.
-            **kwargs: Additional keyword arguments for the request.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a GET request. See :meth:`make_request` for the contract."""
         return self.make_request("GET", url, **kwargs)
 
     def post(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a POST request to the specified URL.
-
-        Args:
-            url (str): The URL to send the POST request to.
-            **kwargs: Additional keyword arguments for the request, such as `json` or `data`.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a POST request. See :meth:`make_request` for the contract."""
         return self.make_request("POST", url, **kwargs)
 
     def put(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a PUT request to the specified URL.
-
-        Args:
-            url (str): The URL to send the PUT request to.
-            **kwargs: Additional keyword arguments for the request, such as `json` or `data`.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a PUT request. See :meth:`make_request` for the contract."""
         return self.make_request("PUT", url, **kwargs)
 
     def patch(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a PATCH request to the specified URL.
-
-        Args:
-            url (str): The URL to send the PATCH request to.
-            **kwargs: Additional keyword arguments for the request, such as `json` or `data`.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a PATCH request. See :meth:`make_request` for the contract."""
         return self.make_request("PATCH", url, **kwargs)
 
     def delete(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a DELETE request to the specified URL.
-
-        Args:
-            url (str): The URL to send the DELETE request to.
-            **kwargs: Additional keyword arguments for the request.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a DELETE request. See :meth:`make_request` for the contract."""
         return self.make_request("DELETE", url, **kwargs)
 
     def head(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a HEAD request to the specified URL.
-
-        Args:
-            url (str): The URL to send the HEAD request to.
-            **kwargs: Additional keyword arguments for the request.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a HEAD request. See :meth:`make_request` for the contract."""
         return self.make_request("HEAD", url, **kwargs)
 
     def options(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends an OPTIONS request to the specified URL.
-
-        Args:
-            url (str): The URL to send the OPTIONS request to.
-            **kwargs: Additional keyword arguments for the request.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends an OPTIONS request. See :meth:`make_request` for the contract."""
         return self.make_request("OPTIONS", url, **kwargs)

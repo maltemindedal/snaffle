@@ -26,6 +26,7 @@ HTTPClient(
     retries: int = 3,
     verbose: bool = False,
     show_progress: bool = False,
+    session: requests.Session | None = None,
 ) -> HTTPClient
 ```
 
@@ -41,20 +42,51 @@ call `close()`.
 | `timeout` | `int` | `30` | Seconds before a request times out. Must be `> 0`; `ValueError` otherwise. |
 | `retries` | `int` | `3` | Total attempts for a failed request, not retries after the first. Must be `> 0`; `ValueError` otherwise. Translated to `urllib3.util.retry.Retry(total=retries - 1)`. |
 | `verbose` | `bool` | `False` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. |
-| `show_progress` | `bool` | `False` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. |
+| `show_progress` | `bool` | `False` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. A caller who passes `stream=True` opts out; see [`make_request`](#make_request). |
+| `session` | `requests.Session \| None` | `None` | The session to send through. `None` builds the pooled, retrying session described above. A session passed here is used exactly as it arrives; see below. |
 
 Validation runs in `__init__`, before any network access.
+
+#### Passing a session
+
+Two rules apply to a session you supply, and neither is guessed at:
+
+- **`retries` does not apply to it.** The retry policy and the connection pool
+  both come from the session's mounted adapters, so they arrive with the
+  session. `retries` builds the default session and nothing else — it is still
+  validated, still stored on `client.retries`, and has no effect on a session
+  you passed. Passing both is not an error: a caller who mounts a five-attempt
+  adapter may reasonably want `client.retries` to say `5`.
+- **The client will not close it.** `close()` and `__exit__` close only a
+  session the client built, because one you passed may be shared with other
+  clients or outlive this one. Closing it is yours to do.
+
+It is the last parameter, so existing positional calls are unaffected; pass it
+by keyword. Its use is substituting the transport — in tests, mounting an
+adapter on a session you pass is the only substitution above the socket that
+leaves urllib3's retry loop in place, and it needs no patching. See
+[ADR 0004](../architecture/decisions/0004-inject-the-session.md).
+
+```python
+session = requests.Session()
+session.mount("https://", my_adapter)
+
+with HTTPClient(session=session) as client:   # client sends through my_adapter
+    client.get("https://example.com")
+
+session.close()                               # the client did not
+```
 
 ### Instance attributes
 
 | Attribute | Type | Notes |
 | --- | --- | --- |
 | `timeout` | `int` | As constructed. |
-| `retries` | `int` | As constructed. |
+| `retries` | `int` | As constructed. Applied to the default session only; see [Passing a session](#passing-a-session). |
 | `verbose` | `bool` | As constructed. |
 | `show_progress` | `bool` | As constructed. |
 | `allowed_methods` | `frozenset[str]` | The methods this instance accepts. Initialised from `ALLOWED_METHODS` and read on every request. |
-| `session` | `requests.Session` | The pooled session, with the retrying adapter mounted on `http://` and `https://`. |
+| `session` | `requests.Session` | The session requests go through: the one passed to the constructor, or a pooled one with the retrying adapter mounted on `http://` and `https://`. |
 
 The class defines no `__slots__`: instances stay weak-referenceable and accept
 arbitrary attributes.
@@ -100,17 +132,20 @@ client.make_request(method: str, url: str, **kwargs: Any) -> requests.Response
 ```
 
 The single path all seven wrappers take. It validates and upper-cases `method`,
-sets `stream=True` when `show_progress` is on and the method is `GET`, sends the
-request with the client's `timeout`, calls `raise_for_status()`, and translates
+sets `stream=True` when it is going to feed a progress bar, sends the request
+with the client's `timeout`, calls `raise_for_status()`, and translates
 `requests` exceptions into this package's hierarchy.
 
 When progress tracking is active it drains the body into `response._content` and
 marks it consumed, so `.text` and `.json()` serve the buffer rather than
 re-reading a drained socket.
 
-Passing `stream=True` yourself does not trigger that draining: you get an
-unconsumed response to iterate. Passing `stream=True` on a `GET` while
-`show_progress` is on has no additional effect — the client sets it anyway.
+Passing `stream=True` yourself opts out of that draining, whatever
+`show_progress` says: you get an unconsumed response to iterate, and no bar is
+drawn. The two cannot both hold — a bar is fed by reading the body, and reading
+the body is what you asked to do yourself. To have both, drive `tqdm` from your
+own loop; see
+[Download large files](../guides/downloading-large-files.md#combine-your-own-progress-bar-with-streaming).
 
 Raises:
 
@@ -143,10 +178,14 @@ client.close() -> None
 
 Closes the session and releases pooled connections. Idempotent.
 
+Only a session the client built. A session passed to the constructor is left
+open — see [Passing a session](#passing-a-session).
+
 #### `__enter__` / `__exit__`
 
 `HTTPClient` is a context manager. `__enter__` returns the client; `__exit__`
-calls `close()` and suppresses nothing.
+calls `close()` and suppresses nothing — including, therefore, leaving an
+injected session open.
 
 ```python
 with HTTPClient() as client:
@@ -156,8 +195,11 @@ with HTTPClient() as client:
 ### `ProgressBar`
 
 A `typing.Protocol` describing the two `tqdm` methods the client uses —
-`update(n)` and `close()`. Exported from `snaffle.http_client` for typing
-purposes; the client does not accept an injected progress bar.
+`update(n)` and `close()`. It is defined in `snaffle.http_client`, which is its
+supported import path. The private `snaffle._download` module builds the bars
+and refers to the protocol under `TYPE_CHECKING` only, so the run-time
+dependency between the two still runs one way. The client does not accept an
+injected progress bar.
 
 ## Exceptions
 
@@ -208,4 +250,10 @@ inside the adapter and becomes an `HTTPConnectionError`. See
 [Raises](#make_request) above.
 
 Because retries happen inside the adapter, mocking `requests.Session.request`
-cannot observe them — see [contributing](../../CONTRIBUTING.md#testing-notes).
+cannot observe them. A test that needs to see them substitutes the session
+instead, which leaves the adapter underneath it — see
+[Passing a session](#passing-a-session) and
+[contributing](../../CONTRIBUTING.md#testing-notes).
+
+The policy in this table is the one `HTTPClient` builds. A session you pass
+carries whatever policy its own adapters were mounted with.
