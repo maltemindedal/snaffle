@@ -142,9 +142,13 @@ the adapter where urllib3's retry logic lives, so it never observes a retry —
 an earlier revision of this project shipped a false claim about `POST` retry
 behaviour on exactly that mistake.
 
-Test against a real socket (`TestRetryAgainstRealServer` in
+Substitute the transport at the client's interface instead: pass a session,
+`HTTPClient(session=...)`, with your own adapter mounted on it. The adapter and
+its retry loop stay in place, so retries happen and can be counted. Failing
+that, test against a real socket (`TestRetryAgainstRealServer` in
 `tests/test_http_client.py`) or assert on `urllib3.util.retry.Retry` directly.
-See the [contributing notes](../../CONTRIBUTING.md#testing-notes).
+See the [contributing notes](../../CONTRIBUTING.md#testing-notes) and
+[Passing a session](../reference/python-api.md#passing-a-session).
 
 ## `mypy` fails with "Duplicate module named 'snaffle'"
 

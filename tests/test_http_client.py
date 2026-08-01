@@ -8,10 +8,12 @@ import threading
 import unittest
 import weakref
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar, NoReturn, cast
 from unittest.mock import MagicMock, patch
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.connectionpool import ConnectionPool, HTTPConnectionPool
 from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
 from urllib3.util.retry import Retry
 
@@ -28,22 +30,39 @@ class TestHTTPClient(unittest.TestCase):
     """Test cases for the HTTP client class."""
 
     @patch(SESSION_REQUEST)
-    def test_get_request_success(self, mock_request: MagicMock) -> None:
-        """Test a successful GET request."""
-        mock_request.return_value.status_code = 200
-        mock_request.return_value.text = "Success"
+    def test_verb_methods_forward_their_own_method_url_and_kwargs(
+        self, mock_request: MagicMock
+    ) -> None:
+        """Test each verb method delegates with its own method name and the kwargs.
 
-        client = HTTPClient()
-        response = client.get("https://api.example.com")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.text, "Success")
-        # No stream=True: without a progress bar, streaming only holds the
-        # connection open for longer.
-        mock_request.assert_called_once_with(
-            method="GET",
-            url="https://api.example.com",
-            timeout=30,
-        )
+        The seven wrappers carry no behaviour, so this is their whole contract,
+        stated once instead of once per verb. Driving the loop from
+        `ALLOWED_METHODS` also asserts every accepted method has a wrapper.
+
+        Asserting the entire call pins two things besides the delegation: the
+        client's timeout reaches the session, and no `stream=True` is added
+        without a progress bar -- streaming would only hold the connection open
+        for longer.
+        """
+        mock_request.return_value.status_code = 200
+
+        with HTTPClient() as client:
+            for method in sorted(HTTPClient.ALLOWED_METHODS):
+                with self.subTest(method=method):
+                    mock_request.reset_mock()
+                    send = getattr(client, method.lower())
+
+                    response = send(
+                        "https://api.example.com", headers={"X-Verb": method}
+                    )
+
+                    self.assertEqual(response.status_code, 200)
+                    mock_request.assert_called_once_with(
+                        method=method,
+                        url="https://api.example.com",
+                        timeout=30,
+                        headers={"X-Verb": method},
+                    )
 
     @patch(SESSION_REQUEST, side_effect=requests.exceptions.ConnectionError("boom"))
     def test_get_request_connection_failure_maps_to_custom_exception(
@@ -60,31 +79,6 @@ class TestHTTPClient(unittest.TestCase):
         client = HTTPClient()
         with self.assertRaises(HTTPConnectionError):
             client.get("https://api.example.com")
-
-    @patch(SESSION_REQUEST)
-    def test_head_request_success(self, mock_request: MagicMock) -> None:
-        """Test a successful HEAD request."""
-        mock_request.return_value.status_code = 200
-        mock_request.return_value.text = ""
-        client = HTTPClient()
-        response = client.head("https://api.example.com")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.text, "")
-        mock_request.assert_called_once_with(
-            method="HEAD",
-            url="https://api.example.com",
-            timeout=30,
-        )
-
-    @patch(SESSION_REQUEST)
-    def test_options_request_success(self, mock_request: MagicMock) -> None:
-        """Test a successful OPTIONS request."""
-        mock_request.return_value.status_code = 200
-        mock_request.return_value.text = ""
-        client = HTTPClient()
-        response = client.options("https://api.example.com")
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.text, "")
 
     @patch(BUFFER_INTO)
     @patch(SESSION_REQUEST)
@@ -240,6 +234,87 @@ class TestSessionReuse(unittest.TestCase):
         client.close()
 
 
+class _RecordingAdapter(HTTPAdapter):
+    """A transport that answers from memory and records what it was asked for.
+
+    Mounted on a session handed to `HTTPClient`, it replaces the network without
+    patching anything.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.requests: list[requests.PreparedRequest] = []
+
+    def send(
+        self,
+        request: requests.PreparedRequest,
+        stream: bool = False,
+        timeout: Any = None,
+        verify: bool | str = True,
+        cert: Any = None,
+        proxies: Any = None,
+    ) -> requests.Response:
+        """Records the request and answers it with a canned 200."""
+        self.requests.append(request)
+        response = requests.Response()
+        response.status_code = 200
+        response.url = request.url or ""
+        response.request = request
+        cast(Any, response)._content = b'{"ok": true}'
+        return response
+
+
+class TestInjectedSession(unittest.TestCase):
+    """The session seam: substituting the transport at the client's own interface.
+
+    `patch("requests.Session.request")` substitutes below this interface and
+    above the adapter, so it cannot see a retry. A session passed to the
+    constructor is substituted at the interface and keeps urllib3's machinery
+    underneath it -- which is what `TestRetryWithoutASocket` uses.
+    """
+
+    def test_an_injected_session_carries_the_request(self) -> None:
+        """Test the client sends through the session it was given."""
+        adapter = _RecordingAdapter()
+        session = requests.Session()
+        session.mount("https://", adapter)
+
+        with HTTPClient(session=session) as client:
+            self.assertIs(client.session, session)
+            response = client.get("https://api.example.com/thing")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"ok": True})
+        self.assertEqual([request.method for request in adapter.requests], ["GET"])
+        self.assertEqual(adapter.requests[0].url, "https://api.example.com/thing")
+
+    def test_an_injected_session_is_not_closed(self) -> None:
+        """Test a session the client did not build stays the caller's to close.
+
+        The caller may be sharing it with other clients, so closing it here
+        would pull the pool out from under them.
+        """
+        session = requests.Session()
+        with patch.object(session, "close") as mock_close:
+            with HTTPClient(session=session) as client:
+                client.close()
+            mock_close.assert_not_called()
+
+    def test_retries_do_not_reach_an_injected_session(self) -> None:
+        """Test `retries` configures the default session and nothing else.
+
+        The retry policy lives on the session's adapters, so a caller who
+        supplies a session supplies the policy along with it. A bare
+        `requests.Session` mounts adapters that do not retry at all.
+        """
+        session = requests.Session()
+        client = HTTPClient(retries=5, session=session)
+
+        self.assertEqual(client.retries, 5)
+        adapter = cast(Any, client.session.get_adapter("https://api.example.com"))
+        self.assertEqual(adapter.max_retries.total, 0)
+
+
 class TestRetryPolicy(unittest.TestCase):
     """Retry behaviour exercised against the real urllib3 machinery.
 
@@ -290,6 +365,94 @@ class TestRetryPolicy(unittest.TestCase):
         retry = self._retry()
         self.assertFalse(retry.is_retry("GET", 404))
         self.assertFalse(retry.is_retry("POST", 404))
+
+
+class _NoSocketPool(HTTPConnectionPool):
+    """A real urllib3 pool whose every connection attempt fails, without a socket.
+
+    urllib3 runs its retry loop inside `HTTPConnectionPool.urlopen`, so the loop
+    only turns if the pool is real. `_new_conn` is the last step before a socket
+    is opened; failing there counts attempts and opens nothing. It is private to
+    urllib3, which is the price of watching the loop from outside.
+    """
+
+    def __init__(self) -> None:
+        super().__init__("127.0.0.1", 9)
+        self.attempts = 0
+
+    def _new_conn(self) -> NoReturn:
+        """Counts the attempt and fails it as if the connection had timed out."""
+        self.attempts += 1
+        raise ConnectTimeoutError("no socket is opened by this test double")
+
+
+class _NoSocketAdapter(HTTPAdapter):
+    """A real adapter, carrying a real retry policy, over `_NoSocketPool`."""
+
+    def __init__(self, retry: Retry, pool: _NoSocketPool) -> None:
+        super().__init__(max_retries=retry)
+        self.no_socket_pool = pool
+
+    def get_connection_with_tls_context(
+        self,
+        request: requests.PreparedRequest,
+        verify: bool | str | None,
+        proxies: Any = None,
+        cert: Any = None,
+    ) -> ConnectionPool:
+        """Hands `requests` the pool that never connects."""
+        return self.no_socket_pool
+
+
+class TestRetryWithoutASocket(unittest.TestCase):
+    """Retry behaviour observed through an injected session, opening no socket.
+
+    Retries happen below `Session.request` and above the socket, so neither a
+    mock of the former nor an assertion about the `Retry` object shows them
+    happening. Injecting a session lets a test put a double at the bottom of
+    that gap instead of the top: the client's own policy, urllib3's real loop,
+    and a pool that counts attempts. `TestRetryAgainstRealServer` proves the
+    same behaviour end to end; this is the cheap version of the same question.
+    """
+
+    @staticmethod
+    def _policy(attempts: int) -> Retry:
+        """Returns the client's own retry policy, lifted off a default session."""
+        with HTTPClient(retries=attempts) as client:
+            adapter = cast(Any, client.session.get_adapter("http://x"))
+            return cast(Retry, adapter.max_retries)
+
+    def _client(self, attempts: int, pool: _NoSocketPool) -> HTTPClient:
+        """Returns a client sending through `pool` under the policy for `attempts`."""
+        session = requests.Session()
+        session.mount("http://", _NoSocketAdapter(self._policy(attempts), pool))
+        return HTTPClient(session=session)
+
+    def test_post_is_retried_when_the_connection_never_opens(self) -> None:
+        """Test a POST is re-attempted on connection failure: nothing was sent.
+
+        This is the claim an earlier revision got wrong against a
+        `Session.request` mock, checked here at the same cost as that mock.
+        """
+        pool = _NoSocketPool()
+        # urllib3 logs a warning per retry; `assertLogs` captures it, which both
+        # keeps the output clean and asserts the retry was announced.
+        with (
+            self.assertLogs("urllib3", "WARNING"),
+            self._client(3, pool) as client,
+            self.assertRaises(HTTPConnectionError),
+        ):
+            client.post("http://never.invalid/thing", json={"a": 1})
+
+        self.assertEqual(pool.attempts, 3)
+
+    def test_a_one_attempt_client_does_not_retry(self) -> None:
+        """Test the attempt count follows the policy rather than the double."""
+        pool = _NoSocketPool()
+        with self._client(1, pool) as client, self.assertRaises(HTTPConnectionError):
+            client.get("http://never.invalid/thing")
+
+        self.assertEqual(pool.attempts, 1)
 
 
 class TestRetryAgainstRealServer(unittest.TestCase):

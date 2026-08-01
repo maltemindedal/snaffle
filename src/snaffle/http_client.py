@@ -39,6 +39,17 @@ class HTTPClient:
         with HTTPClient() as client:
             client.get("https://example.com")
 
+    The session is built by :meth:`_build_session` unless one is passed to the
+    constructor. **A client closes only a session it built**: one it was given
+    belongs to the caller, who may be sharing it, and closing it would pull the
+    pool out from under them.
+
+    Passing a session is how the transport is substituted without patching
+    `requests.Session.request` -- a mock there sits above the adapter and cannot
+    observe a retry. An injected session brings its own adapters, so it also
+    brings its own retry policy and connection pool; `retries` builds the default
+    session and does not reach one supplied here.
+
     Retries use exponential backoff and are applied to:
 
     * connection failures, for every method -- a request that never reached the
@@ -79,6 +90,7 @@ class HTTPClient:
         retries: int = 3,
         verbose: bool = False,
         show_progress: bool = False,
+        session: requests.Session | None = None,
     ) -> None:
         """Initializes the HTTPClient with configuration options.
 
@@ -87,6 +99,12 @@ class HTTPClient:
             retries (int, optional): The total number of attempts for failed requests. Defaults to 3.
             verbose (bool, optional): Whether to enable verbose logging. Defaults to False.
             show_progress (bool, optional): Whether to show a progress bar for large downloads. Defaults to False.
+            session (requests.Session, optional): A session to send through. Defaults
+                to one built by :meth:`_build_session`. A session passed here is
+                used as it arrives: `retries` builds the default session and is not
+                applied to this one, because the retry policy and the connection
+                pool both come from the session's mounted adapters. The client does
+                not close a session it did not build; see :meth:`close`.
         """
         if timeout <= 0:
             raise ValueError("timeout must be greater than 0")
@@ -98,7 +116,8 @@ class HTTPClient:
         self.verbose = verbose
         self.show_progress = show_progress
         self.allowed_methods = self.ALLOWED_METHODS
-        self.session = self._build_session(retries)
+        self._owns_session = session is None
+        self.session = self._build_session(retries) if session is None else session
 
     @classmethod
     def _build_session(cls, retries: int) -> requests.Session:
@@ -128,8 +147,14 @@ class HTTPClient:
         return session
 
     def close(self) -> None:
-        """Closes the underlying session and releases pooled connections."""
-        self.session.close()
+        """Closes the session this client built, releasing pooled connections.
+
+        A session passed to the constructor belongs to the caller, who may be
+        sharing it with other clients, so it is left open. Closing it is theirs
+        to do.
+        """
+        if self._owns_session:
+            self.session.close()
 
     def __enter__(self) -> HTTPClient:
         """Returns the client itself, for use as a context manager."""
@@ -141,7 +166,10 @@ class HTTPClient:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        """Closes the session on exit, suppressing nothing."""
+        """Calls :meth:`close` on exit, suppressing nothing.
+
+        An injected session is left open, as it is by :meth:`close`.
+        """
         self.close()
 
     def _validate_method(self, method: str) -> str:
@@ -233,86 +261,35 @@ class HTTPClient:
                 print(f"[VERBOSE] RequestException: {e}")
             raise HTTPClientError(f"Request failed: {e!s}") from e
 
+    # The seven verb methods below are `make_request` with the method fixed.
+    # They carry no behaviour of their own, so they do not restate its contract:
+    # arguments, return value and exceptions are documented once, there and in
+    # `docs/reference/python-api.md`, rather than seven times over here.
+
     def get(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a GET request to the specified URL.
-
-        Args:
-            url (str): The URL to send the GET request to.
-            **kwargs: Additional keyword arguments for the request.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a GET request. See :meth:`make_request` for the contract."""
         return self.make_request("GET", url, **kwargs)
 
     def post(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a POST request to the specified URL.
-
-        Args:
-            url (str): The URL to send the POST request to.
-            **kwargs: Additional keyword arguments for the request, such as `json` or `data`.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a POST request. See :meth:`make_request` for the contract."""
         return self.make_request("POST", url, **kwargs)
 
     def put(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a PUT request to the specified URL.
-
-        Args:
-            url (str): The URL to send the PUT request to.
-            **kwargs: Additional keyword arguments for the request, such as `json` or `data`.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a PUT request. See :meth:`make_request` for the contract."""
         return self.make_request("PUT", url, **kwargs)
 
     def patch(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a PATCH request to the specified URL.
-
-        Args:
-            url (str): The URL to send the PATCH request to.
-            **kwargs: Additional keyword arguments for the request, such as `json` or `data`.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a PATCH request. See :meth:`make_request` for the contract."""
         return self.make_request("PATCH", url, **kwargs)
 
     def delete(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a DELETE request to the specified URL.
-
-        Args:
-            url (str): The URL to send the DELETE request to.
-            **kwargs: Additional keyword arguments for the request.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a DELETE request. See :meth:`make_request` for the contract."""
         return self.make_request("DELETE", url, **kwargs)
 
     def head(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends a HEAD request to the specified URL.
-
-        Args:
-            url (str): The URL to send the HEAD request to.
-            **kwargs: Additional keyword arguments for the request.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends a HEAD request. See :meth:`make_request` for the contract."""
         return self.make_request("HEAD", url, **kwargs)
 
     def options(self, url: str, **kwargs: Any) -> requests.Response:
-        """Sends an OPTIONS request to the specified URL.
-
-        Args:
-            url (str): The URL to send the OPTIONS request to.
-            **kwargs: Additional keyword arguments for the request.
-
-        Returns:
-            requests.Response: The HTTP response object.
-        """
+        """Sends an OPTIONS request. See :meth:`make_request` for the contract."""
         return self.make_request("OPTIONS", url, **kwargs)
