@@ -171,8 +171,13 @@ Response Body:
 | Code | Meaning |
 | --- | --- |
 | `0` | Request succeeded, help was printed, or the user pressed `Ctrl+C`. |
-| `1` | Invalid JSON body, malformed `-H` header, or any `HTTPClientError` — connection failure, non-2xx status, or timeout. |
-| `2` | argparse rejected the command line (unknown command, missing URL, `--progress` on a non-`GET`). |
+| `1` | Invalid JSON body, malformed `-H` header, an argument value the client rejects (`-t 0`, since the timeout must be greater than zero), or any `HTTPClientError` — connection failure, non-2xx status, or timeout. |
+| `2` | argparse rejected the command line (unknown command, missing URL, a non-integer `-t`, `--progress` on a non-`GET`). |
+
+`0` and `1` are returned by `snaffle.cli.main`, which is where the whole mapping
+is decided; `snaffle.__main__.run` passes that return value to `sys.exit`. `2`
+never passes through `main` at all — argparse exits from inside `parse_args`,
+before there is a return value to produce.
 
 A non-2xx status is an error: `raise_for_status()` runs before the response is
 printed, so a `404` exits `1` and prints `Error: HTTP error occurred: ...`

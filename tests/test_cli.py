@@ -10,6 +10,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from snaffle.cli import EXAMPLES, main
+from snaffle.exceptions import HTTPClientError
 
 MAKE_REQUEST = "snaffle.http_client.HTTPClient.make_request"
 
@@ -30,11 +31,12 @@ class TestCLI(unittest.TestCase):
         )
 
     def test_help_command(self) -> None:
-        """Test the HELP command prints the usage examples."""
+        """Test the HELP command prints the usage examples and returns 0."""
         with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-            main(["HELP"])
+            exit_code = main(["HELP"])
 
         output = fake_stdout.getvalue()
+        self.assertEqual(exit_code, 0)
         self.assertIn("Examples:", output)
         self.assertIn("Normal GET request:", output)
         self.assertIn(EXAMPLES, output)
@@ -42,8 +44,9 @@ class TestCLI(unittest.TestCase):
     def test_no_command_prints_help(self) -> None:
         """Test a bare invocation falls back to the same help path."""
         with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-            main([])
+            exit_code = main([])
 
+        self.assertEqual(exit_code, 0)
         self.assertIn("Examples:", fake_stdout.getvalue())
 
     @patch(MAKE_REQUEST)
@@ -52,9 +55,10 @@ class TestCLI(unittest.TestCase):
         mock_request.return_value = self._build_response(text="Success")
 
         with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-            main(["GET", "https://api.example.com"])
+            exit_code = main(["GET", "https://api.example.com"])
 
         output = fake_stdout.getvalue()
+        self.assertEqual(exit_code, 0)
         self.assertIn("Status Code: 200", output)
         self.assertIn("Headers:", output)
         self.assertIn("Response Body:", output)
@@ -95,28 +99,59 @@ class TestCLI(unittest.TestCase):
         mock_request.assert_called_once_with("GET", "https://api.example.com")
 
     def test_progress_is_not_available_for_post(self) -> None:
-        """Test that --progress is not available for POST command."""
+        """Test --progress on POST is an argparse error, which still exits 2.
+
+        argparse exits from inside `parse_args`, so this code never reaches
+        `main`'s return value; see the CLI reference on exit codes.
+        """
         with (
-            self.assertRaises(SystemExit),
+            self.assertRaises(SystemExit) as caught,
             patch("sys.stderr", new_callable=io.StringIO),
         ):
             main(["POST", "https://api.example.com", "--progress"])
 
-    def test_invalid_header_value_exits_with_error(self) -> None:
+        self.assertEqual(caught.exception.code, 2)
+
+    def test_invalid_header_value_returns_one(self) -> None:
         """Test invalid header formatting returns a CLI error."""
         fake_stdout = io.StringIO()
-        with self.assertRaises(SystemExit), patch("sys.stdout", new=fake_stdout):
-            main(["GET", "https://api.example.com", "-H", "Authorization"])
+        with patch("sys.stdout", new=fake_stdout):
+            exit_code = main(["GET", "https://api.example.com", "-H", "Authorization"])
 
+        self.assertEqual(exit_code, 1)
         self.assertIn("Invalid header format", fake_stdout.getvalue())
 
-    def test_invalid_json_value_exits_with_error(self) -> None:
+    def test_invalid_json_value_returns_one(self) -> None:
         """Test invalid JSON data returns a CLI error."""
         fake_stdout = io.StringIO()
-        with self.assertRaises(SystemExit), patch("sys.stdout", new=fake_stdout):
-            main(["POST", "https://api.example.com", "-d", "{not-json}"])
+        with patch("sys.stdout", new=fake_stdout):
+            exit_code = main(["POST", "https://api.example.com", "-d", "{not-json}"])
 
+        self.assertEqual(exit_code, 1)
         self.assertIn("Invalid JSON data", fake_stdout.getvalue())
+
+    def test_invalid_timeout_returns_one(self) -> None:
+        """Test a timeout the client rejects returns a CLI error.
+
+        `-t 0` passes argparse — it is a valid int — and is refused by
+        `HTTPClient.__init__` with a plain ValueError.
+        """
+        fake_stdout = io.StringIO()
+        with patch("sys.stdout", new=fake_stdout):
+            exit_code = main(["GET", "https://api.example.com", "-t", "0"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Error: timeout must be greater than 0", fake_stdout.getvalue())
+
+    @patch(MAKE_REQUEST, side_effect=HTTPClientError("Connection error occurred"))
+    def test_client_error_returns_one(self, _: MagicMock) -> None:
+        """Test any HTTPClientError is reported and returns a CLI error."""
+        fake_stdout = io.StringIO()
+        with patch("sys.stdout", new=fake_stdout):
+            exit_code = main(["GET", "https://api.example.com"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertIn("Error: Connection error occurred", fake_stdout.getvalue())
 
     def test_usage_line_is_stable_across_entry_points(self) -> None:
         """Test help output names the command, not whatever launched it."""

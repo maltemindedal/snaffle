@@ -216,15 +216,26 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> None:
+def main(argv: Sequence[str] | None = None) -> int:
     """The main entry point for the snaffle CLI.
 
     This function parses command-line arguments, initializes the HTTP client,
     and executes the requested HTTP command. It also handles response printing
     and error reporting.
 
+    It returns the exit code rather than raising ``SystemExit``, so the whole
+    error-to-code mapping is readable here and testable without a subprocess.
+    ``snaffle.__main__.run`` is what turns the code into a process exit. The one
+    code this function cannot return is ``2``: ``argparse`` exits with it from
+    inside ``parse_args`` below, before there is anything to return.
+
     Args:
         argv (Sequence[str], optional): Arguments to parse. Defaults to ``sys.argv``.
+
+    Returns:
+        int: ``0`` when the request succeeded or help was printed; ``1`` for an
+        invalid JSON body, a malformed ``-H`` header, an argument the client
+        rejects (such as ``-t 0``), or any ``HTTPClientError``.
     """
     parser = create_parser()
     args = parser.parse_args(argv)
@@ -235,7 +246,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         parser.print_help()
         print("\n")
         print(EXAMPLES)
-        return
+        return 0
 
     # Deferred so the help paths above never import the HTTP stack.
     from snaffle.http_client import HTTPClient
@@ -254,8 +265,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         print("Error: Invalid JSON data")
         print("Make sure your JSON data is properly formatted.")
         print('Example: \'{"key": "value"}\'')
-        sys.exit(1)
+        return 1
     except (ValueError, HTTPClientError) as error:
         # json.JSONDecodeError is a ValueError, so it must be caught above this.
         print(f"Error: {error}")
-        sys.exit(1)
+        return 1
+
+    return 0
