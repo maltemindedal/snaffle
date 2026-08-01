@@ -99,6 +99,14 @@ deliberate trade — it makes the common case (a batch of requests to one host)
 fast, at the price of requiring a context manager. See
 [ADR 0001](decisions/0001-selective-retries-and-connection-pooling.md).
 
+The client builds that session unless one is passed to the constructor, which is
+where the transport is substituted — including in tests, where it is the only
+seam above the socket that leaves the retry loop intact. A caller-supplied
+session brings its own adapters, so it brings its own retry policy and pool;
+`retries` does not reach it. Ownership follows construction: **a client closes
+only a session it built**, because one it was given may be shared. See
+[ADR 0004](decisions/0004-inject-the-session.md).
+
 ### Retries are selective, and asymmetric by method
 
 Only connection failures and the transient statuses in `RETRY_STATUSES` are
@@ -141,17 +149,23 @@ checkers use the annotations with no configuration.
 
 ## Testing strategy
 
-Tests are `unittest`, one module per source module. They split into three
+Tests are `unittest`, one module per source module. They split into four
 kinds, and the split is load-bearing:
 
 - **Mocked at `Session.request`** — most client and CLI tests. Fast, and
   correct for anything *above* the adapter.
 - **Asserted against `urllib3.util.retry.Retry` directly** — `TestRetryPolicy`.
   Verifies the policy object without any I/O.
+- **Injected at the session seam** — `TestInjectedSession` and
+  `TestRetryWithoutASocket` pass a session to the constructor. Because the
+  substitution happens at the client's interface rather than below it, the
+  adapter and urllib3's retry loop are still there: `TestRetryWithoutASocket`
+  mounts a real adapter over a pool that fails every connection attempt, and
+  counts them, without opening a socket.
 - **Against a real socket** — `TestRetryAgainstRealServer` starts a
-  `ThreadingHTTPServer` on an ephemeral port and counts arriving requests. This
-  is the only way to observe retries end to end. `TestProgressAgainstRealServer`
-  does the same for the streaming opt-out, which needs a real body to prove the
+  `ThreadingHTTPServer` on an ephemeral port and counts arriving requests. Its
+  subject is the whole stack, end to end. `TestProgressAgainstRealServer` does
+  the same for the streaming opt-out, which needs a real body to prove the
   socket is still unread.
 
 The class docstring on `TestRetryPolicy` records why: an earlier revision

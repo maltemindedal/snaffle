@@ -26,6 +26,7 @@ HTTPClient(
     retries: int = 3,
     verbose: bool = False,
     show_progress: bool = False,
+    session: requests.Session | None = None,
 ) -> HTTPClient
 ```
 
@@ -42,19 +43,50 @@ call `close()`.
 | `retries` | `int` | `3` | Total attempts for a failed request, not retries after the first. Must be `> 0`; `ValueError` otherwise. Translated to `urllib3.util.retry.Retry(total=retries - 1)`. |
 | `verbose` | `bool` | `False` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. |
 | `show_progress` | `bool` | `False` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. A caller who passes `stream=True` opts out; see [`make_request`](#make_request). |
+| `session` | `requests.Session \| None` | `None` | The session to send through. `None` builds the pooled, retrying session described above. A session passed here is used exactly as it arrives; see below. |
 
 Validation runs in `__init__`, before any network access.
+
+#### Passing a session
+
+Two rules apply to a session you supply, and neither is guessed at:
+
+- **`retries` does not apply to it.** The retry policy and the connection pool
+  both come from the session's mounted adapters, so they arrive with the
+  session. `retries` builds the default session and nothing else — it is still
+  validated, still stored on `client.retries`, and has no effect on a session
+  you passed. Passing both is not an error: a caller who mounts a five-attempt
+  adapter may reasonably want `client.retries` to say `5`.
+- **The client will not close it.** `close()` and `__exit__` close only a
+  session the client built, because one you passed may be shared with other
+  clients or outlive this one. Closing it is yours to do.
+
+It is the last parameter, so existing positional calls are unaffected; pass it
+by keyword. Its use is substituting the transport — in tests, mounting an
+adapter on a session you pass is the only substitution above the socket that
+leaves urllib3's retry loop in place, and it needs no patching. See
+[ADR 0004](../architecture/decisions/0004-inject-the-session.md).
+
+```python
+session = requests.Session()
+session.mount("https://", my_adapter)
+
+with HTTPClient(session=session) as client:   # client sends through my_adapter
+    client.get("https://example.com")
+
+session.close()                               # the client did not
+```
 
 ### Instance attributes
 
 | Attribute | Type | Notes |
 | --- | --- | --- |
 | `timeout` | `int` | As constructed. |
-| `retries` | `int` | As constructed. |
+| `retries` | `int` | As constructed. Applied to the default session only; see [Passing a session](#passing-a-session). |
 | `verbose` | `bool` | As constructed. |
 | `show_progress` | `bool` | As constructed. |
 | `allowed_methods` | `frozenset[str]` | The methods this instance accepts. Initialised from `ALLOWED_METHODS` and read on every request. |
-| `session` | `requests.Session` | The pooled session, with the retrying adapter mounted on `http://` and `https://`. |
+| `session` | `requests.Session` | The session requests go through: the one passed to the constructor, or a pooled one with the retrying adapter mounted on `http://` and `https://`. |
 
 The class defines no `__slots__`: instances stay weak-referenceable and accept
 arbitrary attributes.
@@ -146,10 +178,14 @@ client.close() -> None
 
 Closes the session and releases pooled connections. Idempotent.
 
+Only a session the client built. A session passed to the constructor is left
+open — see [Passing a session](#passing-a-session).
+
 #### `__enter__` / `__exit__`
 
 `HTTPClient` is a context manager. `__enter__` returns the client; `__exit__`
-calls `close()` and suppresses nothing.
+calls `close()` and suppresses nothing — including, therefore, leaving an
+injected session open.
 
 ```python
 with HTTPClient() as client:
@@ -213,4 +249,10 @@ inside the adapter and becomes an `HTTPConnectionError`. See
 [Raises](#make_request) above.
 
 Because retries happen inside the adapter, mocking `requests.Session.request`
-cannot observe them — see [contributing](../../CONTRIBUTING.md#testing-notes).
+cannot observe them. A test that needs to see them substitutes the session
+instead, which leaves the adapter underneath it — see
+[Passing a session](#passing-a-session) and
+[contributing](../../CONTRIBUTING.md#testing-notes).
+
+The policy in this table is the one `HTTPClient` builds. A session you pass
+carries whatever policy its own adapters were mounted with.
