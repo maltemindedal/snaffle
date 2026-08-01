@@ -26,6 +26,69 @@ SESSION_REQUEST = "requests.Session.request"
 BUFFER_INTO = "snaffle.http_client.buffer_into"
 
 
+def _adapter_of(client: HTTPClient, url: str = "http://x") -> Any:
+    """Returns the adapter a client would send `url` through."""
+    return client.session.get_adapter(url)
+
+
+def _policy_for(attempts: int) -> Retry:
+    """Returns the retry policy carried by a default client built for `attempts`.
+
+    `attempts` counts total attempts, the same way `HTTPClient(retries=...)`
+    does -- not the way urllib3's `Retry.total` does, which is one fewer.
+    """
+    with HTTPClient(retries=attempts) as client:
+        return cast(Retry, _adapter_of(client).max_retries)
+
+
+class _QuietHandler(BaseHTTPRequestHandler):
+    """A keep-alive handler that does not log every request to stderr."""
+
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, *args: Any) -> None:
+        """Discards the per-request log line the base class would print."""
+
+    def send_body(self, code: int, body: bytes) -> None:
+        """Sends one complete response, `Content-Length` included."""
+        self.send_response(code)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class _LocalServerTestCase(unittest.TestCase):
+    """Base for tests that need a real socket. Subclasses supply `handler`.
+
+    A real server is the only way to observe some of what this package promises
+    -- retries happen below `Session.request`, and only a socket has a body to
+    drain -- so two test classes need one. The scaffolding lives here rather
+    than in both.
+    """
+
+    handler: ClassVar[type[BaseHTTPRequestHandler]]
+    server: ClassVar[ThreadingHTTPServer]
+    base_url: ClassVar[str]
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        """Starts the subclass's handler on an ephemeral port."""
+
+        class Server(ThreadingHTTPServer):
+            def handle_error(self, *args: Any) -> None:
+                """Swallows the disconnect tracebacks these tests provoke."""
+
+        cls.server = Server(("127.0.0.1", 0), cls.handler)
+        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
+        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        """Shuts the server down and releases its port."""
+        cls.server.shutdown()
+        cls.server.server_close()
+
+
 class TestHTTPClient(unittest.TestCase):
     """Test cases for the HTTP client class."""
 
@@ -190,7 +253,7 @@ class TestSessionReuse(unittest.TestCase):
     def test_session_is_pooled_and_retry_configured(self) -> None:
         """Test adapters are mounted with pooling and a backoff retry policy."""
         client = HTTPClient(retries=4)
-        adapter = cast(Any, client.session.get_adapter("https://api.example.com"))
+        adapter = _adapter_of(client, "https://api.example.com")
 
         self.assertEqual(adapter._pool_maxsize, HTTPClient.POOL_SIZE)
         retry = adapter.max_retries
@@ -311,7 +374,7 @@ class TestInjectedSession(unittest.TestCase):
         client = HTTPClient(retries=5, session=session)
 
         self.assertEqual(client.retries, 5)
-        adapter = cast(Any, client.session.get_adapter("https://api.example.com"))
+        adapter = _adapter_of(client, "https://api.example.com")
         self.assertEqual(adapter.max_retries.total, 0)
 
 
@@ -325,16 +388,9 @@ class TestRetryPolicy(unittest.TestCase):
     retries connection errors for every method.
     """
 
-    @staticmethod
-    def _retry(total: int = 3) -> Retry:
-        adapter = cast(
-            Any, HTTPClient(retries=total + 1).session.get_adapter("http://x")
-        )
-        return cast(Retry, adapter.max_retries)
-
     def test_connection_errors_retry_for_non_idempotent_methods(self) -> None:
         """Test a POST is retried on connect failure: nothing reached the server."""
-        retry = self._retry()
+        retry = _policy_for(4)
         # Does not raise -> the attempt is retried.
         retry.increment(method="POST", error=ConnectTimeoutError())
 
@@ -344,25 +400,25 @@ class TestRetryPolicy(unittest.TestCase):
 
     def test_read_errors_do_not_retry_for_non_idempotent_methods(self) -> None:
         """Test a POST is not replayed after a read failure: it may have landed."""
-        retry = self._retry()
+        retry = _policy_for(4)
         # urllib3 re-raises the original error rather than retrying.
         with self.assertRaises(ReadTimeoutError):
             retry.increment(method="POST", error=self._read_error())
 
     def test_read_errors_retry_for_idempotent_methods(self) -> None:
         """Test a GET is retried after a read failure."""
-        retry = self._retry()
+        retry = _policy_for(4)
         retry.increment(method="GET", error=self._read_error())
 
     def test_retryable_status_is_retried_only_for_idempotent_methods(self) -> None:
         """Test the 503 allowlist applies to GET but not to POST."""
-        retry = self._retry()
+        retry = _policy_for(4)
         self.assertTrue(retry.is_retry("GET", 503))
         self.assertFalse(retry.is_retry("POST", 503))
 
     def test_dead_end_status_is_never_retried(self) -> None:
         """Test a 404 is not retried for any method."""
-        retry = self._retry()
+        retry = _policy_for(4)
         self.assertFalse(retry.is_retry("GET", 404))
         self.assertFalse(retry.is_retry("POST", 404))
 
@@ -415,17 +471,10 @@ class TestRetryWithoutASocket(unittest.TestCase):
     same behaviour end to end; this is the cheap version of the same question.
     """
 
-    @staticmethod
-    def _policy(attempts: int) -> Retry:
-        """Returns the client's own retry policy, lifted off a default session."""
-        with HTTPClient(retries=attempts) as client:
-            adapter = cast(Any, client.session.get_adapter("http://x"))
-            return cast(Retry, adapter.max_retries)
-
     def _client(self, attempts: int, pool: _NoSocketPool) -> HTTPClient:
         """Returns a client sending through `pool` under the policy for `attempts`."""
         session = requests.Session()
-        session.mount("http://", _NoSocketAdapter(self._policy(attempts), pool))
+        session.mount("http://", _NoSocketAdapter(_policy_for(attempts), pool))
         return HTTPClient(session=session)
 
     def test_post_is_retried_when_the_connection_never_opens(self) -> None:
@@ -455,47 +504,25 @@ class TestRetryWithoutASocket(unittest.TestCase):
         self.assertEqual(pool.attempts, 1)
 
 
-class TestRetryAgainstRealServer(unittest.TestCase):
-    """End-to-end retry behaviour against a real socket, counting real requests."""
+class _CountingHandler(_QuietHandler):
+    """Answers `/flaky` with a 503 and everything else with a 404, counting hits."""
 
-    server: ClassVar[ThreadingHTTPServer]
-    base_url: ClassVar[str]
     hits: ClassVar[list[str]] = []
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        hits = cls.hits
+    def _reply(self) -> None:
+        """Records the request and answers it without ever succeeding."""
+        self.hits.append(f"{self.command} {self.path}")
+        self.send_body(503 if self.path == "/flaky" else 404, b"{}")
 
-        class Handler(BaseHTTPRequestHandler):
-            protocol_version = "HTTP/1.1"
+    do_GET = _reply
+    do_POST = _reply
 
-            def log_message(self, *args: Any) -> None:
-                pass
 
-            def _reply(self) -> None:
-                hits.append(f"{self.command} {self.path}")
-                code = 503 if self.path == "/flaky" else 404
-                body = b"{}"
-                self.send_response(code)
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
+class TestRetryAgainstRealServer(_LocalServerTestCase):
+    """End-to-end retry behaviour against a real socket, counting real requests."""
 
-            do_GET = _reply
-            do_POST = _reply
-
-        class Server(ThreadingHTTPServer):
-            def handle_error(self, *args: Any) -> None:
-                pass
-
-        cls.server = Server(("127.0.0.1", 0), Handler)
-        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
-        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.server.shutdown()
-        cls.server.server_close()
+    handler = _CountingHandler
+    hits: ClassVar[list[str]] = _CountingHandler.hits
 
     def setUp(self) -> None:
         self.hits.clear()
@@ -529,47 +556,27 @@ class TestRetryAgainstRealServer(unittest.TestCase):
         self.assertEqual(len(self.hits), 4)
 
 
-class TestProgressAgainstRealServer(unittest.TestCase):
+#: Deliberately over `MIN_SIZE_FOR_PROGRESS`, so the progress path is fully live.
+LARGE_BODY = b"snaffle!" * (6 * 1024 * 1024 // 8)
+
+
+class _LargeBodyHandler(_QuietHandler):
+    """Serves `LARGE_BODY` with a `Content-Length`, for any GET."""
+
+    def do_GET(self) -> None:
+        """Answers with the large body."""
+        self.send_body(200, LARGE_BODY)
+
+
+class TestProgressAgainstRealServer(_LocalServerTestCase):
     """The streaming opt-out, verified against a real socket.
 
     A `Session.request` mock cannot show this. The defect it guards was a body
     drained out from under a caller who asked to stream it, and only a real
-    socket has a body to drain. The payload is deliberately over
-    `MIN_SIZE_FOR_PROGRESS`, so the progress path is fully live.
+    socket has a body to drain.
     """
 
-    body: ClassVar[bytes] = b"snaffle!" * (6 * 1024 * 1024 // 8)
-    server: ClassVar[ThreadingHTTPServer]
-    base_url: ClassVar[str]
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        body = cls.body
-
-        class Handler(BaseHTTPRequestHandler):
-            protocol_version = "HTTP/1.1"
-
-            def log_message(self, *args: Any) -> None:
-                pass
-
-            def do_GET(self) -> None:
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-
-        class Server(ThreadingHTTPServer):
-            def handle_error(self, *args: Any) -> None:
-                pass
-
-        cls.server = Server(("127.0.0.1", 0), Handler)
-        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
-        cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.server.shutdown()
-        cls.server.server_close()
+    handler = _LargeBodyHandler
 
     def test_explicit_stream_leaves_the_body_unread(self) -> None:
         """Test show_progress no longer drains a response asked to stream.
@@ -577,21 +584,32 @@ class TestProgressAgainstRealServer(unittest.TestCase):
         Regression: the progress path ignored the caller's `stream=True` and
         consumed the body anyway, so the returned response had nothing left to
         iterate.
+
+        `_content_consumed` is the assertion that separates the two cases.
+        `iter_content` re-slices an already-buffered body, so it yields the full
+        payload either way -- it cannot tell a live socket from a drained one.
+        The flag is what the API reference documents, so it is the contract.
+        The bar on stderr is the same difference, made visible.
         """
+        stderr = io.StringIO()
         with HTTPClient(show_progress=True) as client:
-            response = client.get(f"{self.base_url}/large", stream=True)
+            with contextlib.redirect_stderr(stderr):
+                response = client.get(f"{self.base_url}/large", stream=True)
 
             self.assertFalse(cast(Any, response)._content_consumed)
-            self.assertEqual(b"".join(response.iter_content(65536)), self.body)
+            self.assertEqual(stderr.getvalue(), "", "no bar is drawn for a stream")
+            self.assertEqual(b"".join(response.iter_content(65536)), LARGE_BODY)
 
     def test_progress_download_returns_a_read_response(self) -> None:
         """Test the buffering path still hands back a fully-read response."""
+        stderr = io.StringIO()
         with HTTPClient(show_progress=True) as client:
-            with contextlib.redirect_stderr(io.StringIO()):  # silence the bar
+            with contextlib.redirect_stderr(stderr):
                 response = client.get(f"{self.base_url}/large")
 
             self.assertTrue(cast(Any, response)._content_consumed)
-            self.assertEqual(response.content, self.body)
+            self.assertIn("%", stderr.getvalue(), "a bar is drawn for a download")
+            self.assertEqual(response.content, LARGE_BODY)
 
 
 if __name__ == "__main__":

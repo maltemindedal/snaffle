@@ -14,19 +14,15 @@ undo the start-up win recorded in ADR 0002. `tests/test_init.py` guards that.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Protocol, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import requests
 
-
-class ProgressBar(Protocol):
-    """Protocol for the subset of progress-bar methods used by the client."""
-
-    def update(self, n: float | None = 1) -> bool | None:
-        """Advance the progress display by the provided number of bytes."""
-
-    def close(self) -> None:
-        """Close the progress display and release any related resources."""
+if TYPE_CHECKING:
+    # Type-only, so the run-time dependency still runs one way: `http_client`
+    # imports this module, never the reverse. `ProgressBar` is documented as
+    # part of `http_client`'s surface, so it is defined there.
+    from snaffle.http_client import ProgressBar
 
 
 def should_buffer(method: str, show_progress: bool, kwargs: Mapping[str, Any]) -> bool:
@@ -115,7 +111,9 @@ def _create_progress_bar(total: int, min_size: int, desc: str) -> ProgressBar | 
     # bar should never pay. See ADR 0002.
     from tqdm import tqdm
 
+    # The target is quoted: `ProgressBar` is imported for type checking only, so
+    # the name does not exist when `cast` evaluates its arguments at run time.
     return cast(
-        ProgressBar,
+        "ProgressBar",
         tqdm(total=total, unit="B", unit_scale=True, desc=desc),
     )

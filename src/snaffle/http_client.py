@@ -12,18 +12,32 @@ of paying for a fresh handshake each time.
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Any
+from typing import Any, Protocol
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from snaffle._download import ProgressBar, buffer_into, should_buffer
+from snaffle._download import buffer_into, should_buffer
 from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 
-#: `ProgressBar` lives in `_download` with the code that builds one, but it is
-#: documented as importable from here, so it stays part of this module's surface.
 __all__ = ["HTTPClient", "ProgressBar"]
+
+
+class ProgressBar(Protocol):
+    """Protocol for the subset of progress-bar methods used by the client.
+
+    Defined here because it is documented as part of this module's surface.
+    `_download` builds the bars and refers to this protocol under
+    `TYPE_CHECKING` only, so the dependency between the two modules still runs
+    one way at run time.
+    """
+
+    def update(self, n: float | None = 1) -> bool | None:
+        """Advance the progress display by the provided number of bytes."""
+
+    def close(self) -> None:
+        """Close the progress display and release any related resources."""
 
 
 class HTTPClient:
@@ -166,10 +180,7 @@ class HTTPClient:
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> None:
-        """Calls :meth:`close` on exit, suppressing nothing.
-
-        An injected session is left open, as it is by :meth:`close`.
-        """
+        """Calls :meth:`close` on exit, suppressing nothing."""
         self.close()
 
     def _validate_method(self, method: str) -> str:

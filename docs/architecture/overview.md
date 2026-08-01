@@ -34,10 +34,15 @@ artifact is a wheel.
 | `_download.py` | Private. Owns the progress-bar download whole: whether to drain, the size threshold, the deferred `tqdm` import, the chunk loop, and writing the buffer back onto the response. |
 | `exceptions.py` | Three exception classes. No dependencies, not even on `requests`. |
 
-The dependency graph is acyclic and shallow. `exceptions` depends on nothing;
-`_download` depends on the HTTP stack; `http_client` depends on `exceptions`,
-`_download`, and the HTTP stack; `cli` depends on `exceptions` at import time
-and on `http_client` at call time.
+The run-time dependency graph is acyclic and shallow. `exceptions` depends on
+nothing; `_download` depends on the HTTP stack; `http_client` depends on
+`exceptions`, `_download`, and the HTTP stack; `cli` depends on `exceptions` at
+import time and on `http_client` at call time.
+
+The one edge that runs the other way is type-only: `_download` refers to
+`http_client.ProgressBar` under `TYPE_CHECKING`, because the protocol is
+documented as part of `http_client`'s surface while the code that builds a bar
+lives in `_download`. Nothing is imported at run time, so the graph above holds.
 
 `_download` imports `requests` at module scope, as `http_client` does. That is
 safe because nothing reaches `_download` except through `http_client`, and
