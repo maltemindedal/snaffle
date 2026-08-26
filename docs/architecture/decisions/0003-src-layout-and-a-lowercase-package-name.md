@@ -58,9 +58,9 @@ part of the public API, so renaming it is a major bump.
 Code written against the old names breaks:
 
 ```python
-from PyFetch import HTTPClient   # 1.x — gone
-from Snaffle import HTTPClient   # never existed as such
-from snaffle import HTTPClient   # 2.0.0 onward
+from PyFetch import HTTPClient  # 1.x — gone
+from Snaffle import HTTPClient  # never existed as such
+from snaffle import HTTPClient  # 2.0.0 onward
 ```
 
 Nothing bridges the gap. No compatibility shim or deprecation alias was added,
