@@ -71,10 +71,10 @@ leaves urllib3's retry loop in place, and it needs no patching. See
 session = requests.Session()
 session.mount("https://", my_adapter)
 
-with HTTPClient(session=session) as client:   # client sends through my_adapter
+with HTTPClient(session=session) as client:  # client sends through my_adapter
     client.get("https://example.com")
 
-session.close()                               # the client did not
+session.close()  # the client did not
 ```
 
 ### Instance attributes

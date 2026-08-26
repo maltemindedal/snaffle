@@ -50,6 +50,7 @@ Comprehensive guide to profiling, analyzing, and optimizing Python code for bett
 ```python
 import time
 
+
 def measure_time():
     """Simple timing measurement."""
     start = time.time()
@@ -61,14 +62,12 @@ def measure_time():
     print(f"Execution time: {elapsed:.4f} seconds")
     return result
 
+
 # Better: use timeit for accurate measurements
 import timeit
 
-execution_time = timeit.timeit(
-    "sum(range(1000000))",
-    number=100
-)
-print(f"Average time: {execution_time/100:.6f} seconds")
+execution_time = timeit.timeit("sum(range(1000000))", number=100)
+print(f"Average time: {execution_time / 100:.6f} seconds")
 ```
 
 ## Profiling Tools
@@ -80,6 +79,7 @@ import cProfile
 import pstats
 from pstats import SortKey
 
+
 def slow_function():
     """Function to profile."""
     total = 0
@@ -87,15 +87,18 @@ def slow_function():
         total += i
     return total
 
+
 def another_function():
     """Another function."""
     return [i**2 for i in range(100000)]
+
 
 def main():
     """Main function to profile."""
     result1 = slow_function()
     result2 = another_function()
     return result1, result2
+
 
 # Profile the code
 if __name__ == "__main__":
@@ -143,6 +146,7 @@ def process_data(data):
         result.append(processed)
     return result
 
+
 # Run with:
 # kernprof -l -v script.py
 ```
@@ -152,6 +156,7 @@ def process_data(data):
 ```python
 from line_profiler import LineProfiler
 
+
 def process_data(data):
     """Function to profile."""
     result = []
@@ -159,6 +164,7 @@ def process_data(data):
         processed = item * 2
         result.append(processed)
     return result
+
 
 if __name__ == "__main__":
     lp = LineProfiler()
@@ -179,6 +185,7 @@ if __name__ == "__main__":
 
 from memory_profiler import profile
 
+
 @profile
 def memory_intensive():
     """Function that uses lots of memory."""
@@ -192,6 +199,7 @@ def memory_intensive():
     result = sum(big_list)
 
     return result
+
 
 if __name__ == "__main__":
     memory_intensive()
@@ -225,6 +233,7 @@ py-spy dump --pid 12345
 ```python
 import timeit
 
+
 # Slow: Traditional loop
 def slow_squares(n):
     """Create list of squares using loop."""
@@ -233,10 +242,12 @@ def slow_squares(n):
         result.append(i**2)
     return result
 
+
 # Fast: List comprehension
 def fast_squares(n):
     """Create list of squares using comprehension."""
     return [i**2 for i in range(n)]
+
 
 # Benchmark
 n = 100000
@@ -246,7 +257,8 @@ fast_time = timeit.timeit(lambda: fast_squares(n), number=100)
 
 print(f"Loop: {slow_time:.4f}s")
 print(f"Comprehension: {fast_time:.4f}s")
-print(f"Speedup: {slow_time/fast_time:.2f}x")
+print(f"Speedup: {slow_time / fast_time:.2f}x")
+
 
 # Even faster for simple operations: map
 def faster_squares(n):
@@ -259,15 +271,18 @@ def faster_squares(n):
 ```python
 import sys
 
+
 def list_approach():
     """Memory-intensive list."""
     data = [i**2 for i in range(1000000)]
     return sum(data)
 
+
 def generator_approach():
     """Memory-efficient generator."""
     data = (i**2 for i in range(1000000))
     return sum(data)
+
 
 # Memory comparison
 list_data = [i for i in range(1000000)]
@@ -284,6 +299,7 @@ print(f"Generator size: {sys.getsizeof(gen_data)} bytes")
 ```python
 import timeit
 
+
 def slow_concat(items):
     """Slow string concatenation."""
     result = ""
@@ -291,14 +307,17 @@ def slow_concat(items):
         result += str(item)
     return result
 
+
 def fast_concat(items):
     """Fast string concatenation with join."""
     return "".join(str(item) for item in items)
+
 
 def faster_concat(items):
     """Even faster with list."""
     parts = [str(item) for item in items]
     return "".join(parts)
+
 
 items = list(range(10000))
 
@@ -322,29 +341,26 @@ size = 10000
 items = list(range(size))
 lookup_dict = {i: i for i in range(size)}
 
+
 def list_search(items, target):
     """O(n) search in list."""
     return target in items
+
 
 def dict_search(lookup_dict, target):
     """O(1) search in dict."""
     return target in lookup_dict
 
+
 target = size - 1  # Worst case for list
 
 # Benchmark
-list_time = timeit.timeit(
-    lambda: list_search(items, target),
-    number=1000
-)
-dict_time = timeit.timeit(
-    lambda: dict_search(lookup_dict, target),
-    number=1000
-)
+list_time = timeit.timeit(lambda: list_search(items, target), number=1000)
+dict_time = timeit.timeit(lambda: dict_search(lookup_dict, target), number=1000)
 
 print(f"List search: {list_time:.6f}s")
 print(f"Dict search: {dict_time:.6f}s")
-print(f"Speedup: {list_time/dict_time:.0f}x")
+print(f"Speedup: {list_time / dict_time:.0f}x")
 ```
 
 ### Pattern 9: Local Variable Access
@@ -355,12 +371,14 @@ import timeit
 # Global variable (slow)
 GLOBAL_VALUE = 100
 
+
 def use_global():
     """Access global variable."""
     total = 0
     for i in range(10000):
         total += GLOBAL_VALUE
     return total
+
 
 def use_local():
     """Use local variable."""
@@ -370,19 +388,21 @@ def use_local():
         total += local_value
     return total
 
+
 # Local is faster
 global_time = timeit.timeit(use_global, number=1000)
 local_time = timeit.timeit(use_local, number=1000)
 
 print(f"Global access: {global_time:.4f}s")
 print(f"Local access: {local_time:.4f}s")
-print(f"Speedup: {global_time/local_time:.2f}x")
+print(f"Speedup: {global_time / local_time:.2f}x")
 ```
 
 ### Pattern 10: Function Call Overhead
 
 ```python
 import timeit
+
 
 def calculate_inline():
     """Inline calculation."""
@@ -391,9 +411,11 @@ def calculate_inline():
         total += i * 2 + 1
     return total
 
+
 def helper_function(x):
     """Helper function."""
     return x * 2 + 1
+
 
 def calculate_with_function():
     """Calculation with function calls."""
@@ -401,6 +423,7 @@ def calculate_with_function():
     for i in range(10000):
         total += helper_function(i)
     return total
+
 
 # Inline is faster due to no call overhead
 inline_time = timeit.timeit(calculate_inline, number=1000)

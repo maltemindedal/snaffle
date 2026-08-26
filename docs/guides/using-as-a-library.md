@@ -184,7 +184,8 @@ on first attribute access (PEP 562), which keeps start-up fast for code paths
 that may never make a request.
 
 ```python
-import snaffle                 # requests not imported
+import snaffle  # requests not imported
+
 client = snaffle.HTTPClient()  # imported now
 ```
 

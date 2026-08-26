@@ -19,12 +19,16 @@ You are an expert Python developer specializing in the PowerPlatform-Dataverse-C
 ## Error Handling Structure
 ```python
 from PowerPlatform.Dataverse.core.errors import (
-    DataverseError, ValidationError, MetadataError, HttpError
+    DataverseError,
+    ValidationError,
+    MetadataError,
+    HttpError,
 )
 import logging
 import time
 
 logger = logging.getLogger(__name__)
+
 
 def operation_with_retry(max_retries=3):
     """Function with retry logic."""
@@ -36,7 +40,7 @@ def operation_with_retry(max_retries=3):
             if attempt == max_retries - 1:
                 logger.error(f"Failed after {max_retries} attempts: {e}")
                 raise
-            backoff = 2 ** attempt
+            backoff = 2**attempt
             logger.warning(f"Attempt {attempt + 1} failed. Retrying in {backoff}s")
             time.sleep(backoff)
 ```
@@ -66,8 +70,7 @@ class DataverseService:
 import logging
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
