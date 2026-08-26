@@ -106,7 +106,7 @@ src/snaffle/   The package (import name: snaffle). src-layout, so tests
                exercise the installed distribution.
 tests/         One unittest module per source module.
 docs/          All documentation. Start at docs/README.md.
-.github/       CI: lint, format, mypy, tests on Python 3.10-3.14, wheel build.
+.github/       CI: lint, format, ty, tests on Python 3.10-3.14, wheel build.
 .agents/       Skill definitions for LLM coding assistants.
 ```
 

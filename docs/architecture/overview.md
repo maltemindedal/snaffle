@@ -148,7 +148,7 @@ places while the code did the opposite.
 
 ### The distribution is typed
 
-`mypy --strict` covers `src/` and `tests/`, and the wheel ships a PEP 561
+`ty`, with every rule at error level, covers `src/` and `tests/`, and the wheel ships a PEP 561
 `py.typed` marker, verified in CI by unzipping the built wheel. Downstream type
 checkers use the annotations with no configuration.
 
