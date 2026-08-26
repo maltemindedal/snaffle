@@ -41,7 +41,15 @@ include = ["snaffle", "snaffle.*"]
 snaffle = ["py.typed"]
 
 [dependency-groups]
-dev = ["mypy>=1.13,<2", "ruff>=0.11.5,<0.12", "types-requests>=2.33.0,<3"]
+dev = [
+    "mypy>=1.13,<2",
+    "ruff>=0.11.5,<0.12",
+    "ty>=0.0.75",
+    "types-requests>=2.33.0,<3",
+    # Tests need `override` at runtime; the project floor is 3.10 and
+    # `typing.override` arrived in 3.12.
+    "typing-extensions>=4.4",
+]
 
 [tool.mypy]
 python_version = "3.10"
@@ -55,6 +63,10 @@ exclude = ["^build/", "^dist/"]
 [[tool.mypy.overrides]]
 module = ["tqdm"]
 ignore_missing_imports = true
+
+[tool.ty.rules]
+# Every rule at error level -- the ty counterpart of mypy's `strict = true`.
+all = "error"
 
 [tool.ruff]
 target-version = "py310"
