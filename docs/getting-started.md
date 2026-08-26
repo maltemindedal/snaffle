@@ -31,7 +31,7 @@ uv sync --group dev
 
 This creates a `.venv/` in the project, installs `requests`, `tqdm`, and
 `urllib3`, installs Snaffle itself in editable mode, and adds the development
-tools (`ruff`, `mypy`, `types-requests`).
+tools (`ruff`, `ty`, `types-requests`).
 
 ## Step 3 — Check the install
 

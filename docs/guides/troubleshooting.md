@@ -39,8 +39,8 @@ Note the package is named `snaffle`, all lowercase. `import Snaffle` and
 import package was lowercased in 2.0.0. See the [changelog](../../CHANGELOG.md).
 
 If a stale `PyFetch.egg-info/` or `Snaffle.egg-info/` directory is lying around
-from an older build, delete it — `mypy` in particular can trip over a duplicate
-package definition.
+from an older build, delete it — leftover metadata from before the renames can
+shadow the real install.
 
 ## `Error: Invalid JSON data`
 
@@ -149,9 +149,3 @@ that, test against a real socket (`TestRetryAgainstRealServer` in
 `tests/test_http_client.py`) or assert on `urllib3.util.retry.Retry` directly.
 See the [contributing notes](../../CONTRIBUTING.md#testing-notes) and
 [Passing a session](../reference/python-api.md#passing-a-session).
-
-## `mypy` fails with "Duplicate module named 'snaffle'"
-
-A `build/` or `dist/` directory contains a copy of the package. Those are
-excluded in `pyproject.toml`, so this means an artifact elsewhere — most likely
-a stale `*.egg-info/`. Delete it and re-run.

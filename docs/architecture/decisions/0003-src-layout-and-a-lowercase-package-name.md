@@ -66,11 +66,12 @@ from snaffle import HTTPClient  # 2.0.0 onward
 Nothing bridges the gap. No compatibility shim or deprecation alias was added,
 because the project has no known external consumers to protect.
 
-`mypy` needs `mypy_path = "src"` to find the package, and needs `build/` and
-`dist/` excluded — after a build those directories contain a second copy of the
-package, and `mypy .` fails with "Duplicate module named 'snaffle'". Both are
-configured in `pyproject.toml`. Stale `*.egg-info/` directories from before the
-renames cause the same failure and have to be deleted by hand.
+After a build, `build/` and `dist/` contain a second copy of the package, which
+a type checker scanning the tree can mistake for the real one — at the time,
+`mypy` needed `mypy_path = "src"` and explicit excludes for both in
+`pyproject.toml`; its successor `ty` skips them by honouring `.gitignore`.
+Stale `*.egg-info/` directories from before the renames are the same hazard
+and have to be deleted by hand.
 
 Running the CLI now requires the package to be installed. `python cli.py` from
 the checkout no longer works, which is the point.

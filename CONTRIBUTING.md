@@ -53,7 +53,7 @@ All four must pass; CI runs them on Python 3.10 through 3.14.
 ```bash
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy .
+uv run ty check
 uv run python -m unittest discover tests
 ```
 
@@ -61,7 +61,8 @@ To apply formatting: `uv run ruff format .`
 
 ## Testing notes
 
-Type checking runs in `mypy --strict` over both `src/` and `tests/`.
+Type checking is `ty` with every rule at error level (`[tool.ty.rules]
+all = "error"` in `pyproject.toml`), over both `src/` and `tests/`.
 
 Do not mock `requests.Session.request` when the behaviour under test involves
 retries. That mock sits *above* the adapter where urllib3's retry logic lives,

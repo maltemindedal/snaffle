@@ -72,9 +72,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- ty as a second type checker alongside mypy, with every rule at error level
-  (`[tool.ty.rules] all = "error"`), the ty counterpart of the existing
-  `strict = true` mypy configuration. Satisfying it added `@override`
+- ty as the project's type checker, with every rule at error level
+  (`[tool.ty.rules] all = "error"`). It replaces mypy, whose `strict = true`
+  configuration was the equivalent bar. Satisfying it added `@override`
   decorators (via `typing_extensions`, since the project floor is 3.10) to the
   test doubles in `tests/test_http_client.py` and corrected two of their
   signatures — `log_message` and `handle_error` collapsed their base class's
@@ -102,6 +102,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- mypy, in favour of ty (see Added). The `[tool.mypy]` configuration is gone
+  from `pyproject.toml`, including the `build/`/`dist/` excludes it needed —
+  ty honours `.gitignore`, so build output is skipped without configuration.
+  `types-requests` stays: ty reads the same stubs for `requests`.
 - `snaffle.cli.show_examples` and the `suppress_output` parameter of
   `snaffle.cli.main`. Neither was part of the documented public API — that is
   `HTTPClient` and the three exceptions — and the flag existed only to quiet
