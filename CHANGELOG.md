@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ty as a second type checker alongside mypy, with every rule at error level
+  (`[tool.ty.rules] all = "error"`), the ty counterpart of the existing
+  `strict = true` mypy configuration. Satisfying it added `@override`
+  decorators (via `typing_extensions`, since the project floor is 3.10) to the
+  test doubles in `tests/test_http_client.py` and corrected two of their
+  signatures — `log_message` and `handle_error` collapsed their base class's
+  parameters into `*args`, which violated the base signatures they claimed to
+  override.
 - A `docs/` tree covering the tutorial, how-to guides, CLI and Python API
   reference, and the architecture, including decision records for the retry
   policy, the lazy imports, and the src-layout move. `README.md` is now a front

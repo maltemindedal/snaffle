@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 from requests.adapters import HTTPAdapter
+from typing_extensions import override
 from urllib3.connectionpool import ConnectionPool, HTTPConnectionPool
 from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
 from urllib3.util.retry import Retry
@@ -46,7 +47,8 @@ class _QuietHandler(BaseHTTPRequestHandler):
 
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, *args: Any) -> None:
+    @override
+    def log_message(self, format: str, *args: Any) -> None:
         """Discards the per-request log line the base class would print."""
 
     def send_body(self, code: int, body: bytes) -> None:
@@ -71,11 +73,13 @@ class _LocalServerTestCase(unittest.TestCase):
     base_url: ClassVar[str]
 
     @classmethod
+    @override
     def setUpClass(cls) -> None:
         """Starts the subclass's handler on an ephemeral port."""
 
         class Server(ThreadingHTTPServer):
-            def handle_error(self, *args: Any) -> None:
+            @override
+            def handle_error(self, request: Any, client_address: Any) -> None:
                 """Swallows the disconnect tracebacks these tests provoke."""
 
         cls.server = Server(("127.0.0.1", 0), cls.handler)
@@ -83,6 +87,7 @@ class _LocalServerTestCase(unittest.TestCase):
         cls.base_url = f"http://127.0.0.1:{cls.server.server_address[1]}"
 
     @classmethod
+    @override
     def tearDownClass(cls) -> None:
         """Shuts the server down and releases its port."""
         cls.server.shutdown()
@@ -293,7 +298,7 @@ class TestSessionReuse(unittest.TestCase):
         """
         client = HTTPClient()
         weakref.ref(client)
-        client.custom_attribute = "allowed"  # type: ignore[attr-defined]
+        client.custom_attribute = "allowed"  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         client.close()
 
 
@@ -308,6 +313,7 @@ class _RecordingAdapter(HTTPAdapter):
         super().__init__()
         self.requests: list[requests.PreparedRequest] = []
 
+    @override
     def send(
         self,
         request: requests.PreparedRequest,
@@ -436,6 +442,7 @@ class _NoSocketPool(HTTPConnectionPool):
         super().__init__("127.0.0.1", 9)
         self.attempts = 0
 
+    @override
     def _new_conn(self) -> NoReturn:
         """Counts the attempt and fails it as if the connection had timed out."""
         self.attempts += 1
@@ -449,6 +456,7 @@ class _NoSocketAdapter(HTTPAdapter):
         super().__init__(max_retries=retry)
         self.no_socket_pool = pool
 
+    @override
     def get_connection_with_tls_context(
         self,
         request: requests.PreparedRequest,
@@ -524,6 +532,7 @@ class TestRetryAgainstRealServer(_LocalServerTestCase):
     handler = _CountingHandler
     hits: ClassVar[list[str]] = _CountingHandler.hits
 
+    @override
     def setUp(self) -> None:
         self.hits.clear()
 
