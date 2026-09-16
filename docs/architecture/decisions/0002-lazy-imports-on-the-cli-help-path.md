@@ -15,7 +15,7 @@ touched the network: `HELP`, `--help`, and any argument error.
 
 ## Decision
 
-Defer the import of the HTTP stack to the point where a request is actually
+Defer the import of the HTTP stack until a request is
 made. Three places:
 
 **`cli.main` imports `HTTPClient` after the help branch returns.** The import
@@ -25,7 +25,7 @@ paths and argparse errors never reach it.
 **`snaffle/__init__.py` resolves `HTTPClient` through a module-level
 `__getattr__` (PEP 562).** `import snaffle` no longer imports `requests`;
 `from snaffle import HTTPClient` still works and triggers the import on first
-access. The exceptions are imported eagerly — `exceptions.py` has no
+access. The exceptions are imported eagerly because `exceptions.py` has no
 dependencies, so it is free.
 
 **`snaffle._download` imports `tqdm` inside the function that builds the bar.**
@@ -62,7 +62,7 @@ Static analysis sees less. `__getattr__` returns `Any`, so `HTTPClient` and
 `__version__` are typed for consumers only via the `TYPE_CHECKING` block in
 `__init__.py`. That block exists solely to keep the annotations visible to type
 checkers. `cli.py` uses the same device to annotate `_emit_response` with
-`requests.Response` without importing `requests` at run time — a
+`requests.Response` without importing `requests` at run time. A
 `TYPE_CHECKING` import is not a violation of this ADR, because it never
 executes.
 
@@ -79,4 +79,4 @@ fixed `HELP` but not `--help` or argument errors, which go through argparse in
 `cli.py` and would still have pulled in the client.
 
 **Drop `tqdm`** and hand-roll a progress bar to avoid the dependency. Not worth
-it — the lazy import already removes the cost for runs that do not use it.
+it. The lazy import already removes the cost for runs that do not use it.

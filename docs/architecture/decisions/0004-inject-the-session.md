@@ -9,7 +9,7 @@
 the session's `HTTPAdapter` and recorded the consequence: retries became
 invisible to the obvious mock. They run inside urllib3, below
 `requests.Session.request`, so patching that name cannot observe them. The
-project had already shipped a false claim on exactly that mistake — "a `POST`
+project had already shipped a false claim because of that mistake: "a `POST`
 is never silently re-sent", asserted against such a mock, and wrong.
 
 The mitigation ADR 0001 chose was documentation: `CONTRIBUTING.md` names the
@@ -17,16 +17,14 @@ trap, and the two ways around it are a real socket
 (`TestRetryAgainstRealServer`) or an assertion about the `Retry` object
 (`TestRetryPolicy`).
 
-That accepted the hazard as permanent, and the reason it looked permanent was a
-missing seam rather than anything about retries. `HTTPClient.__init__`
-constructed its own session — `self.session = self._build_session(retries)` —
-so the client declared no point at which its transport could be replaced.
+That accepted the hazard as permanent because the client offered no way to
+replace its transport. `HTTPClient.__init__` constructed its own session with
+`self.session = self._build_session(retries)`.
 Substitution could only happen by patching, and the only name available to
 patch, `requests.Session.request`, sits in the gap between the client's
-interface and the adapter: below the thing being tested, above the thing that
-does the retrying. Eleven tests patch it. For the behaviour those eleven cover
-— method validation, exception translation, the progress delegation — it is the
-right tool. For retries it is a trap with a warning sign on it.
+interface and the adapter. It is below the client behavior under test but above
+the retry logic. Eleven tests patch it. That works for method validation,
+exception translation, and progress delegation. It does not work for retries.
 
 ## Decision
 
@@ -42,7 +40,7 @@ client is unchanged. The parameter is last, so existing positional calls are
 unaffected.
 
 **A client closes only a session it built.** `__init__` records whether it
-built the session; `close()` — and therefore `__exit__` — is a no-op for one it
+built the session. `close()` and `__exit__` are no-ops for one it
 was given. A caller may be sharing that session with other clients or with code
 that outlives this one, and closing it would pull the pool out from under them.
 
@@ -69,13 +67,13 @@ Retry behaviour is observable at Snaffle's own interface without a socket.
 `TestRetryWithoutASocket` mounts a real `HTTPAdapter`, carrying the client's own
 `Retry`, over a pool whose every connection attempt fails before a socket is
 opened, and counts the attempts. It shows a `POST` being re-attempted three
-times on connection failure — the claim that was once asserted falsely — in
-about the time a mock takes.
+times on connection failure in about the time a mock takes. This is the behavior
+that the earlier mock-based test reported incorrectly.
 
 That test reaches into urllib3: the retry loop lives inside
 `HTTPConnectionPool.urlopen`, so the double has to sit under `urlopen`, and the
 lowest point above the socket is the private `_new_conn`. The coupling is
-narrower than it looks — one method, one exception type — but it is coupling to
+narrow, with one method and one exception type, but it is coupling to
 a private name, and it is recorded in the double's docstring.
 `TestRetryAgainstRealServer` stays, and remains the only test that exercises the
 whole stack.
@@ -88,9 +86,9 @@ into is unchanged, and so is the warning in `CONTRIBUTING.md`.
 **The public interface now names a `requests` type.** This is the real cost.
 [ADR 0002](0002-lazy-imports-on-the-cli-help-path.md) works to keep `requests`
 off the import path, and `HTTPClient.__init__` now has a parameter annotated
-`requests.Session | None`. There is no new start-up cost — `http_client.py`
+`requests.Session | None`. There is no new start-up cost. `http_client.py`
 already imports `requests` at module scope, and `http_client` is itself imported
-lazily, which is what ADR 0002 actually protects; the guards in
+lazily, which is what ADR 0002 protects; the guards in
 `tests/test_init.py` and `tests/test_cli.py` still pass unchanged. But the
 *interface* now mentions a third-party type on the way in, where before it did
 so only on the way out, as the `requests.Response` every request method returns.
@@ -98,33 +96,27 @@ Snaffle is a thin layer over `requests` and has never hidden it, so this states
 something that was already true; it is still a widening of what the constructor
 commits to.
 
-Two rules now have to be documented rather than inferred: that a supplied
+Two rules must now be documented: a supplied
 session does not get `retries`, and that the client will not close it. Both are
 in the class docstring, the constructor docstring, the API reference, and
-`CONTRIBUTING.md`. A rule that lives only in the code is a rule that gets
-broken, and this one has a footgun on the other side of it.
+`CONTRIBUTING.md`.
 
 ## Alternatives considered
 
-**Keep patch-only substitution.** The status quo, and it costs nothing to
-leave alone. It also leaves the seam in the one place where it cannot see the
-behaviour ADR 0001 exists for, and leaves `CONTRIBUTING.md` warning contributors
-away from the only substitution point the client offers. A warning is a weaker
-guarantee than a seam: it works exactly as long as everyone reads it, and this
-project has already shipped the failure it warns about.
+**Keep patch-only substitution.** This leaves the only substitution point
+unable to observe the retry behaviour from ADR 0001. It also relies on every
+contributor reading and following the warning in `CONTRIBUTING.md`. The project
+has already shipped the failure described by that warning.
 
-**Take a `Retry` or an `HTTPAdapter` instead of a session.** Narrower, and it
-looks like it dodges the ADR 0002 cost — but it does not, since both are also
-third-party types, and it dodges nothing else either. Adapters are mounted per
-scheme, so accepting one means deciding on the caller's behalf where it is
+**Take a `Retry` or an `HTTPAdapter` instead of a session.** This does not avoid
+the ADR 0002 cost because both are also third-party types. Adapters are mounted
+per scheme, so accepting one means deciding on the caller's behalf where it is
 mounted, and it still would not let a test replace the transport as a whole.
 
-**Take a callable instead — a `send` function or a protocol Snaffle defines.**
-Would keep `requests` out of the signature. It would also mean inventing an
-interface for a library that already has one, converting between it and
-`requests` at the boundary, and giving callers a seam that fits nothing they
-already own. Speculative abstraction to avoid naming a type the module already
-imports.
+**Take a callable, such as a `send` function, or define a protocol.**
+This would keep `requests` out of the signature. It would also require a new
+interface, conversion to and from `requests`, and adapters for existing session
+objects. That complexity only avoids naming a type the module already imports.
 
 **Raise `ValueError` when `retries` and `session` are passed together.** The
 case for it is that silently inert configuration is the same class of hazard

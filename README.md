@@ -2,7 +2,7 @@
 
 A command-line HTTP client, and the Python library behind it.
 
-> **snaffle** _(verb, informal, British)_ — to take something for oneself,
+> **snaffle** _(verb, informal, British)_: to take something for oneself,
 > typically quickly or without permission.
 >
 > _"Snaffle it off the server."_
@@ -81,9 +81,9 @@ with HTTPClient(timeout=10) as client:
     print(response.json())
 ```
 
-`response` is a `requests.Response`. Use the client as a context manager — it
-owns a connection pool, and every request after the first to a given host
-reuses the open connection.
+`response` is a `requests.Response`. Use the client as a context manager because
+it owns a connection pool. Every request after the first to a given host reuses
+the open connection.
 
 ## Documentation
 

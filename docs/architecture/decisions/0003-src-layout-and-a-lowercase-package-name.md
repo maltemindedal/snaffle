@@ -11,7 +11,7 @@ Both caused problems.
 **Flat layout hid packaging bugs.** Because the package directory was on
 `sys.path` by virtue of being the working directory, tests imported the source
 tree directly. Anything that was in the repository but not in the built
-distribution still passed — the tests could not tell the difference between
+distribution still passed. The tests could not tell the difference between
 "works" and "works when run from the checkout".
 
 **A capitalised import package contradicts PEP 8**, which says Python packages
@@ -36,7 +36,7 @@ recommended by the PyPA.** The package lives at `src/snaffle/`, and
 exercise the installed distribution.
 
 **Lowercase the import package** to `snaffle` (2.0.0), then rename the project
-to Snaffle throughout — import package, distribution, and console script all
+to Snaffle throughout. The import package, distribution, and console script are all
 `snaffle` (3.0.0).
 
 **Point the console script at `snaffle.__main__:run`**, not `cli:main`, so both
@@ -58,7 +58,7 @@ part of the public API, so renaming it is a major bump.
 Code written against the old names breaks:
 
 ```python
-from PyFetch import HTTPClient  # 1.x — gone
+from PyFetch import HTTPClient  # removed after 1.x
 from Snaffle import HTTPClient  # never existed as such
 from snaffle import HTTPClient  # 2.0.0 onward
 ```
@@ -67,7 +67,7 @@ Nothing bridges the gap. No compatibility shim or deprecation alias was added,
 because the project has no known external consumers to protect.
 
 After a build, `build/` and `dist/` contain a second copy of the package, which
-a type checker scanning the tree can mistake for the real one — at the time,
+a type checker scanning the tree can mistake for the real one. At the time,
 `mypy` needed `mypy_path = "src"` and explicit excludes for both in
 `pyproject.toml`; its successor `ty` skips them by honouring `.gitignore`.
 Stale `*.egg-info/` directories from before the renames are the same hazard
@@ -79,9 +79,8 @@ the checkout no longer works, which is the point.
 ## Alternatives considered
 
 **Keep the flat layout.** Cheaper, and it leaves the packaging blind spot in
-place — the class of bug where the wheel is missing a file that the tests never
-notice. Shipping `py.typed` without noticing it was missing from the wheel is
-exactly that class.
+place. It cannot catch a wheel that is missing a file present in the checkout.
+For example, the tests could pass even if `py.typed` were absent from the wheel.
 
 **Rename the import package but keep the old distribution name.** Would have
 halved the churn but left the import name, distribution name, and command name

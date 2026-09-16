@@ -1,8 +1,4 @@
-"""Main entry point for the snaffle command-line application.
-
-This module allows the snaffle application to be executed as a package
-by running `python -m snaffle`. It handles the initial execution and
-catches common exceptions like `KeyboardInterrupt`.
+"""Run the Snaffle CLI with ``python -m snaffle``.
 
 `cli.main` reports its outcome as a return value rather than raising
 `SystemExit`, so this is where that code becomes the process exit status. The

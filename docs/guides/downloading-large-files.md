@@ -13,7 +13,7 @@ uv run snaffle GET https://example.com/large-file.zip --progress
 
 The bar appears only if the response's `Content-Length` header is at least
 5 MiB. Smaller responses download without one. If the server sends no
-`Content-Length`, the size reads as `0` and no bar is drawn — the download
+`Content-Length`, the size reads as `0` and no bar is drawn. The download
 still completes.
 
 The bar is drawn by `tqdm` on stderr, so redirecting stdout leaves it visible:
@@ -29,7 +29,7 @@ stdout in the standard three-section format. It does not write a file, and it
 does not stream to stdout as bytes arrive. For binary payloads that is rarely
 what you want.
 
-For actually saving a file, use the Python API, or use a purpose-built tool
+To save a file, use the Python API or a purpose-built tool
 (`curl -O`, `wget`).
 
 ## Stream from Python
@@ -92,7 +92,7 @@ The result is a fully-read response, identical in behaviour to a non-streamed
 one. The memory cost is the whole body.
 
 Passing `stream=True` yourself opts out of all three. The body is left unread
-for you to iterate and no bar is drawn — a bar is fed by reading the body, and
+for you to iterate and no bar is drawn. A bar advances as the body is read, and
 reading it is what you asked to do yourself. See
 [Combine your own progress bar with streaming](#combine-your-own-progress-bar-with-streaming)
 for having both.
@@ -113,4 +113,4 @@ uv sync --extra speedups
 ```
 
 This affects transfer size, not the decoded body. It does nothing for content
-that is already compressed — a `.zip` or a `.jpg` gains nothing.
+that is already compressed. A `.zip` or a `.jpg` gains nothing.

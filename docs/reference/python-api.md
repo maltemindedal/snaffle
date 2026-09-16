@@ -32,7 +32,7 @@ HTTPClient(
 
 A client owns a pooled `requests.Session` for its lifetime. Repeated requests
 to the same host reuse the established TCP/TLS connection. Because the client
-holds an operating-system resource, close it — use it as a context manager or
+holds an operating-system resource, close it. Use it as a context manager or
 call `close()`.
 
 ### Constructor arguments
@@ -53,7 +53,7 @@ Two rules apply to a session you supply, and neither is guessed at:
 
 - **`retries` does not apply to it.** The retry policy and the connection pool
   both come from the session's mounted adapters, so they arrive with the
-  session. `retries` builds the default session and nothing else — it is still
+  session. `retries` builds the default session and nothing else. It is still
   validated, still stored on `client.retries`, and has no effect on a session
   you passed. Passing both is not an error: a caller who mounts a five-attempt
   adapter may reasonably want `client.retries` to say `5`.
@@ -62,7 +62,7 @@ Two rules apply to a session you supply, and neither is guessed at:
   clients or outlive this one. Closing it is yours to do.
 
 It is the last parameter, so existing positional calls are unaffected; pass it
-by keyword. Its use is substituting the transport — in tests, mounting an
+by keyword. Use it to substitute the transport. In tests, mounting an
 adapter on a session you pass is the only substitution above the socket that
 leaves urllib3's retry loop in place, and it needs no patching. See
 [ADR 0004](../architecture/decisions/0004-inject-the-session.md).
@@ -86,7 +86,7 @@ session.close()  # the client did not
 | `verbose` | `bool` | As constructed. |
 | `show_progress` | `bool` | As constructed. |
 | `allowed_methods` | `frozenset[str]` | The methods this instance accepts. Initialised from `ALLOWED_METHODS` and read on every request. |
-| `session` | `requests.Session` | The session requests go through: the one passed to the constructor, or a pooled one with the retrying adapter mounted on `http://` and `https://`. |
+| `session` | `requests.Session` | The session used for requests: the one passed to the constructor, or a pooled one with the retrying adapter mounted on `http://` and `https://`. |
 
 The class defines no `__slots__`: instances stay weak-referenceable and accept
 arbitrary attributes.
@@ -121,9 +121,9 @@ client.get(url: str, **kwargs: Any) -> requests.Response
 ```
 
 Thin wrappers over `make_request` with the method fixed. Every keyword argument
-is forwarded to `requests.Session.request` — `json=`, `data=`, `headers=`,
-`params=`, `stream=`, `allow_redirects=`, and the rest of the `requests`
-surface all work.
+is forwarded to `requests.Session.request`. This includes `json=`, `data=`,
+`headers=`, `params=`, `stream=`, `allow_redirects=`, and all other supported
+arguments.
 
 #### `make_request`
 
@@ -142,7 +142,7 @@ re-reading a drained socket.
 
 Passing `stream=True` yourself opts out of that draining, whatever
 `show_progress` says: you get an unconsumed response to iterate, and no bar is
-drawn. The two cannot both hold — a bar is fed by reading the body, and reading
+drawn. The two cannot both hold. A bar advances by reading the body, and reading
 the body is what you asked to do yourself. To have both, drive `tqdm` from your
 own loop; see
 [Download large files](../guides/downloading-large-files.md#combine-your-own-progress-bar-with-streaming).
@@ -152,13 +152,13 @@ Raises:
 | Exception | When |
 | --- | --- |
 | `ValueError` | `method` is not in `allowed_methods`. Raised before any network access. |
-| `ResponseError` | The response carried a 4xx or 5xx status — including a retryable status that was still failing on the last attempt. |
+| `ResponseError` | The response carried a 4xx or 5xx status, including a retryable status that was still failing on the last attempt. |
 | `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. |
-| `HTTPClientError` | Any other `requests.RequestException` — a read timeout, too many redirects, a malformed URL. |
+| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout, too many redirects, or a malformed URL. |
 
 Two boundaries are easy to get wrong:
 
-- **Exhausted status retries surface as `ResponseError`, not `HTTPConnectionError`.**
+- **Exhausted status retries become `ResponseError`, not `HTTPConnectionError`.**
   The adapter is built with `raise_on_status=False`, so when a `503` is still a
   `503` on the final attempt urllib3 returns that response rather than raising.
   `raise_for_status()` then turns it into a `ResponseError` carrying the real
@@ -167,8 +167,8 @@ Two boundaries are easy to get wrong:
   `HTTPConnectionError` row above refers to.
 - **A connect timeout is an `HTTPConnectionError`; a read timeout is an
   `HTTPClientError`.** `requests.exceptions.ConnectTimeout` subclasses
-  `ConnectionError`, so it is caught as a connection failure — which is what it
-  is. `ReadTimeout` does not, so it falls through to the general case.
+  `ConnectionError`, so it is caught as a connection failure. `ReadTimeout`
+  does not, so it falls through to the general case.
 
 #### `close`
 
@@ -179,12 +179,12 @@ client.close() -> None
 Closes the session and releases pooled connections. Idempotent.
 
 Only a session the client built. A session passed to the constructor is left
-open — see [Passing a session](#passing-a-session).
+open. See [Passing a session](#passing-a-session).
 
 #### `__enter__` / `__exit__`
 
 `HTTPClient` is a context manager. `__enter__` returns the client; `__exit__`
-calls `close()` and suppresses nothing — including, therefore, leaving an
+calls `close()` and suppresses nothing. It leaves an
 injected session open.
 
 ```python
@@ -194,7 +194,7 @@ with HTTPClient() as client:
 
 ### `ProgressBar`
 
-A `typing.Protocol` describing the two `tqdm` methods the client uses —
+A `typing.Protocol` describing the two `tqdm` methods the client uses:
 `update(n)` and `close()`. It is defined in `snaffle.http_client`, which is its
 supported import path. The private `snaffle._download` module builds the bars
 and refers to the protocol under `TYPE_CHECKING` only, so the run-time
@@ -251,7 +251,7 @@ inside the adapter and becomes an `HTTPConnectionError`. See
 
 Because retries happen inside the adapter, mocking `requests.Session.request`
 cannot observe them. A test that needs to see them substitutes the session
-instead, which leaves the adapter underneath it — see
+instead, which leaves the adapter underneath it. See
 [Passing a session](#passing-a-session) and
 [contributing](../../CONTRIBUTING.md#testing-notes).
 

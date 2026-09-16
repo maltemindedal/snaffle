@@ -2,7 +2,7 @@
 
 Every command, alias, and flag accepted by `snaffle`. Help text below is
 reproduced from the program's own `--help` output, as rendered by the `argparse`
-in Python 3.13 and later. On 3.10 through 3.12 — both supported — argparse
+in Python 3.13 and later. On the supported 3.10 through 3.12 releases, argparse
 repeats the metavar after each short option, so `-t, --timeout TIMEOUT` appears
 as `-t TIMEOUT, --timeout TIMEOUT`. Nothing else differs.
 
@@ -17,7 +17,7 @@ uv run snaffle GET https://httpbin.org/get  # inside the uv-managed environment
 ```
 
 The console script points at `snaffle.__main__:run`, not `cli:main`, so all
-three handle `Ctrl+C` identically — printing `Operation cancelled by user` and
+three handle `Ctrl+C` identically. They print `Operation cancelled by user` and
 exiting `0` rather than raising a traceback.
 
 ## Commands
@@ -36,14 +36,14 @@ usage: snaffle [-h]
 | `DELETE` | `delete` | no | no |
 | `HEAD` | `head` | no | no |
 | `OPTIONS` | `options` | no | no |
-| `HELP` | `help` | — | — |
+| `HELP` | `help` | not available | not available |
 
 Every command has a lowercase alias. `snaffle get` and `snaffle GET` are
 equivalent.
 
 Running `snaffle` with no command, `snaffle HELP`, or `snaffle help` prints the
 top-level help followed by the numbered examples. None of these paths import
-`requests` — see [ADR 0002](../architecture/decisions/0002-lazy-imports-on-the-cli-help-path.md).
+`requests`. See [ADR 0002](../architecture/decisions/0002-lazy-imports-on-the-cli-help-path.md).
 
 ## Options
 
@@ -57,9 +57,9 @@ Applied by `add_common_arguments` to all seven method subcommands.
 | `-t`, `--timeout` | int | `30` | Request timeout in seconds. Passed to `requests` as the `timeout` argument. |
 | `-H`, `--header` | string | none | HTTP header in `Key: Value` format. Repeatable; each occurrence adds one header. A value without a `:` exits `1` with `Error: Invalid header format. Use 'Key: Value'.` |
 | `-v`, `--verbose` | flag | off | Log the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, to stdout, prefixed `[VERBOSE]`. |
-| `-h`, `--help` | flag | — | Print this subcommand's help and exit. |
+| `-h`, `--help` | flag | not applicable | Print this subcommand's help and exit. |
 
-### `-d`, `--data` — `POST`, `PUT`, `PATCH` only
+### `-d`, `--data` for `POST`, `PUT`, and `PATCH`
 
 A JSON document sent as the request body. The string is parsed with
 `json.loads` and handed to `requests` as `json=`, so the `Content-Type:
@@ -74,7 +74,7 @@ The help text shows a per-method example: `{"key": "value"}` for `POST`,
 There is no flag for a non-JSON body. Sending form data or raw bytes requires
 the [Python API](python-api.md).
 
-### `--progress` — `GET` only
+### `--progress` for `GET`
 
 Draw a `tqdm` progress bar while the body downloads. The bar appears only when
 the response's `Content-Length` header is at least 5 MiB
@@ -82,7 +82,7 @@ the response's `Content-Length` header is at least 5 MiB
 silently. `tqdm` writes to stderr, so piping stdout is unaffected.
 
 Passing `--progress` switches the request to streaming mode. Without it, `GET`
-does not stream — see [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
+does not stream. See [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
 
 Passing `--progress` to any other command is an argparse error and exits `2`.
 
@@ -147,10 +147,10 @@ options:
 ## Output format
 
 A successful request writes the status line, every response header, and the
-body — pretty-printed with 4-space indentation if it parses as JSON, verbatim
-otherwise. An empty or whitespace-only body omits the `Response Body:` section
-entirely. The whole response is assembled in memory and written to stdout in
-one call.
+body. A JSON body is pretty-printed with 4-space indentation; other bodies are
+printed verbatim. An empty or whitespace-only body omits the `Response Body:`
+section. The whole response is assembled in memory and written to stdout in one
+call.
 
 ```
 Status Code: 200
@@ -171,12 +171,12 @@ Response Body:
 | Code | Meaning |
 | --- | --- |
 | `0` | Request succeeded, help was printed, or the user pressed `Ctrl+C`. |
-| `1` | Invalid JSON body, malformed `-H` header, an argument value the client rejects (`-t 0`, since the timeout must be greater than zero), or any `HTTPClientError` — connection failure, non-2xx status, or timeout. |
+| `1` | Invalid JSON body, malformed `-H` header, an argument value the client rejects (`-t 0`, since the timeout must be greater than zero), or any `HTTPClientError`, including a connection failure, non-2xx status, or timeout. |
 | `2` | argparse rejected the command line (unknown command, missing URL, a non-integer `-t`, `--progress` on a non-`GET`). |
 
 `0` and `1` are returned by `snaffle.cli.main`, which is where the whole mapping
 is decided; `snaffle.__main__.run` passes that return value to `sys.exit`. `2`
-never passes through `main` at all — argparse exits from inside `parse_args`,
+never passes through `main` because argparse exits from inside `parse_args`,
 before there is a return value to produce.
 
 A non-2xx status is an error: `raise_for_status()` runs before the response is
@@ -187,7 +187,7 @@ rather than rendering the response body.
 
 These are available only through the [Python API](python-api.md):
 
-- `retries` — the CLI always uses the default of 3 attempts.
+- `retries`. The CLI always uses the default of 3 attempts.
 - Non-JSON request bodies (`data=`, `files=`).
-- Query parameters as a mapping (`params=`) — put them in the URL instead.
+- Query parameters as a mapping (`params=`). Put them in the URL instead.
 - Response objects. The CLI prints and discards.
