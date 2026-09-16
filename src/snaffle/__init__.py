@@ -1,11 +1,7 @@
-"""A lightweight and flexible HTTP client library for Python.
+"""Public API for the Snaffle HTTP client.
 
-This package provides the `HTTPClient` for making HTTP requests and custom
-exceptions for handling errors. It is designed to be used both as a
-command-line tool and as a library in other Python applications.
-
-`HTTPClient` is resolved lazily (PEP 562) so that importing this package -- or
-running the CLI's help paths -- does not pull in `requests`, which costs well
+`HTTPClient` is resolved lazily (PEP 562), so importing this package or running
+the CLI's help paths does not pull in `requests`, which costs well
 over 100 ms of interpreter start-up on its own. `from snaffle import HTTPClient`
 keeps working exactly as before and imports the stack on first access.
 
@@ -42,9 +38,8 @@ __all__ = [
 def __getattr__(name: str) -> Any:
     """Resolves `HTTPClient` and `__version__` on first access.
 
-    Both are deferred: `HTTPClient` so that `requests` is not imported, and
-    `__version__` so that reading the installed distribution's metadata is not
-    charged to every import of this package.
+    `HTTPClient` is deferred to avoid importing `requests`. `__version__` is
+    deferred to avoid reading package metadata on every import.
     """
     if name == "HTTPClient":
         from snaffle.http_client import HTTPClient

@@ -30,7 +30,7 @@ Almost always a stale or missing environment. Re-sync:
 uv sync --group dev
 ```
 
-If it persists, check you are in the right interpreter — `uv run python -c
+If it persists, check that you are in the right interpreter. `uv run python -c
 "import snaffle; print(snaffle.__file__)"` should print a path under
 `src/snaffle/`.
 
@@ -39,7 +39,7 @@ Note the package is named `snaffle`, all lowercase. `import Snaffle` and
 import package was lowercased in 2.0.0. See the [changelog](../../CHANGELOG.md).
 
 If a stale `PyFetch.egg-info/` or `Snaffle.egg-info/` directory is lying around
-from an older build, delete it — leftover metadata from before the renames can
+from an older build, delete it. Leftover metadata from before the renames can
 shadow the real install.
 
 ## `Error: Invalid JSON data`
@@ -63,7 +63,7 @@ echo '{"key": "value"}' | uv run python -m json.tool
 
 Every `-H` value needs a colon. `-H "Authorization"` fails; `-H "Authorization:
 Bearer token"` works. Whitespace around the colon is stripped, and only the
-first colon splits — so `-H "Referer: https://example.com"` keeps the URL
+first colon splits, so `-H "Referer: https://example.com"` keeps the URL
 intact.
 
 Repeat the flag for multiple headers rather than comma-joining them:
@@ -99,7 +99,7 @@ A connection failure is retried for every method, including `POST`: a request
 that never reached the server cannot have been acted on twice.
 
 A server that kept returning a transient status until the retries ran out does
-*not* land here — that ends as `Error: HTTP error occurred: 503 ...`, because
+*not* land here. It ends as `Error: HTTP error occurred: 503 ...` because
 the last response is reported rather than discarded. See the
 [Python API reference](../reference/python-api.md#make_request).
 
@@ -113,7 +113,7 @@ uv run snaffle GET https://slow.example.com -t 5
 
 Note that the timeout is per attempt. With the default three attempts and
 exponential backoff, a request against a server that keeps failing takes
-noticeably longer than the timeout alone — roughly half a second of backoff on
+longer than the timeout alone, with roughly half a second of backoff on
 top. The CLI has no flag for the retry count; use the
 [Python API](../reference/python-api.md) with `retries=1` if you need one shot.
 
@@ -123,7 +123,7 @@ Three possibilities:
 
 1. The response is smaller than 5 MiB (`MIN_SIZE_FOR_PROGRESS`).
 2. The server sent no `Content-Length` header, so the total reads as `0`.
-3. stderr is redirected — `tqdm` writes there, not to stdout.
+3. stderr is redirected. `tqdm` writes there, not to stdout.
 
 The download completes either way.
 
@@ -138,8 +138,8 @@ error: unrecognized arguments: --progress
 ## Retries do not happen in my test
 
 If you mocked `requests.Session.request`, they cannot. That mock sits *above*
-the adapter where urllib3's retry logic lives, so it never observes a retry —
-an earlier revision of this project shipped a false claim about `POST` retry
+the adapter where urllib3's retry logic lives, so it never observes a retry.
+An earlier revision of this project shipped a false claim about `POST` retry
 behaviour on exactly that mistake.
 
 Substitute the transport at the client's interface instead: pass a session,

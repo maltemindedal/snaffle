@@ -1,4 +1,4 @@
-"""Test cases for the package's public surface and lazy attribute resolution."""
+"""Test the package's public API and lazy attribute resolution."""
 
 from __future__ import annotations
 

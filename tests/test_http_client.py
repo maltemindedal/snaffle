@@ -64,7 +64,7 @@ class _LocalServerTestCase(unittest.TestCase):
 
     A real server is the only way to observe some of what this package promises
     -- retries happen below `Session.request`, and only a socket has a body to
-    drain -- so two test classes need one. The scaffolding lives here rather
+    drain, so two test classes need one. The shared setup lives here rather
     than in both.
     """
 
@@ -334,7 +334,7 @@ class _RecordingAdapter(HTTPAdapter):
 
 
 class TestInjectedSession(unittest.TestCase):
-    """The session seam: substituting the transport at the client's own interface.
+    """Session injection substitutes the transport at the client's interface.
 
     `patch("requests.Session.request")` substitutes below this interface and
     above the adapter, so it cannot see a retry. A session passed to the

@@ -1,8 +1,7 @@
-"""Command-line interface for making HTTP requests.
+"""Parse HTTP commands and print their responses.
 
-This module provides a command-line interface (CLI) for making HTTP requests
-using the snaffle HTTP client. It supports common HTTP methods, custom headers,
-JSON data, and other features.
+The CLI accepts GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS requests with
+custom headers and JSON bodies.
 
 The HTTP client (and with it ``requests``) is imported lazily so that ``--help``,
 ``HELP`` and argument errors do not pay for the network stack they never use.
@@ -139,13 +138,10 @@ def _emit_response(response: requests.Response) -> None:
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
-    """Adds common command-line arguments to the given parser.
-
-    This function standardizes the arguments for URL, timeout, headers, and verbosity
-    across different sub-commands.
+    """Add the shared URL, timeout, header, and verbosity arguments.
 
     Args:
-        parser (argparse.ArgumentParser): The parser to which the arguments will be added.
+        parser (argparse.ArgumentParser): The parser to update.
     """
     parser.add_argument("url", help="Target URL")
     parser.add_argument(
@@ -170,10 +166,7 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
 
 
 def create_parser() -> argparse.ArgumentParser:
-    """Creates and configures the argument parser for the CLI.
-
-    This function sets up the main parser and subparsers for each supported
-    HTTP method, defining the available commands and their arguments.
+    """Build the CLI argument parser and its method subcommands.
 
     Returns:
         argparse.ArgumentParser: The configured argument parser.
@@ -217,11 +210,7 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """The main entry point for the snaffle CLI.
-
-    This function parses command-line arguments, initializes the HTTP client,
-    and executes the requested HTTP command. It also handles response printing
-    and error reporting.
+    """Parse arguments, run the requested command, and return its exit code.
 
     It returns the exit code rather than raising ``SystemExit``, so the whole
     error-to-code mapping is readable here and testable without a subprocess.

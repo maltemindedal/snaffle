@@ -1,10 +1,11 @@
-# Python Performance Optimization — Advanced Reference
+# Advanced Python performance patterns
 
-Advanced optimization techniques including NumPy vectorization, caching, memory management, parallelization, async I/O, database optimization, and benchmarking tools.
+Use these patterns after profiling identifies CPU, memory, I/O, or database
+work as the bottleneck.
 
-## Advanced Optimization
+## CPU and concurrency
 
-### Pattern 11: NumPy for Numerical Operations
+### Pattern 11: NumPy for numerical operations
 
 ```python
 import timeit
@@ -54,7 +55,7 @@ print(f"NumPy multiply: {np_time:.4f}s")
 print(f"Speedup: {py_time / np_time:.2f}x")
 ```
 
-### Pattern 12: Caching with functools.lru_cache
+### Pattern 12: caching with functools.lru_cache
 
 ```python
 from functools import lru_cache
@@ -89,7 +90,7 @@ print(f"With cache (1000 runs): {fast_time:.4f}s")
 print(f"Cache info: {fibonacci_fast.cache_info()}")
 ```
 
-### Pattern 13: Using __slots__ for Memory
+### Pattern 13: reducing instance memory with __slots__
 
 ```python
 import sys
@@ -130,7 +131,7 @@ print(f"\nMemory for 10000 regular objects: ~{sys.getsizeof(regular) * 10000} by
 print(f"Memory for 10000 slotted objects: ~{sys.getsizeof(slotted) * 10000} bytes")
 ```
 
-### Pattern 14: Multiprocessing for CPU-Bound Tasks
+### Pattern 14: multiprocessing for CPU-bound tasks
 
 ```python
 import multiprocessing as mp
@@ -168,7 +169,7 @@ if __name__ == "__main__":
     print(f"Speedup: {seq_time / par_time:.2f}x")
 ```
 
-### Pattern 15: Async I/O for I/O-Bound Tasks
+### Pattern 15: async I/O for I/O-bound tasks
 
 ```python
 import asyncio
@@ -220,9 +221,9 @@ print(f"Asynchronous: {async_time:.2f}s")
 print(f"Speedup: {sync_time / async_time:.2f}x")
 ```
 
-## Database Optimization
+## Database queries
 
-### Pattern 16: Batch Database Operations
+### Pattern 16: batch database operations
 
 ```python
 import sqlite3
@@ -270,7 +271,7 @@ print(f"Batch insert: {fast_time:.4f}s")
 print(f"Speedup: {slow_time / fast_time:.2f}x")
 ```
 
-### Pattern 17: Query Optimization
+### Pattern 17: query plans and indexes
 
 ```python
 # Use indexes for frequently queried columns
@@ -300,9 +301,9 @@ print(cursor.fetchall())
 # Fast: SELECT id, name
 ```
 
-## Memory Optimization
+## Memory use
 
-### Pattern 18: Detecting Memory Leaks
+### Pattern 18: detecting retained objects
 
 ```python
 import tracemalloc
@@ -350,7 +351,7 @@ track_memory_usage()
 gc.collect()
 ```
 
-### Pattern 19: Iterators vs Lists
+### Pattern 19: iterators and lists
 
 ```python
 import sys
@@ -373,7 +374,7 @@ def process_file_iterator(filename):
 # List loads entire file into memory
 ```
 
-### Pattern 20: Weakref for Caches
+### Pattern 20: weak references in caches
 
 ```python
 import weakref
@@ -413,9 +414,9 @@ def get_resource_weak(key):
 # When no strong references exist, objects can be GC'd
 ```
 
-## Benchmarking Tools
+## Benchmarks
 
-### Custom Benchmark Decorator
+### Custom benchmark decorator
 
 ```python
 import time
@@ -446,7 +447,7 @@ def slow_function():
 result = slow_function()
 ```
 
-### Performance Testing with pytest-benchmark
+### Performance tests with pytest-benchmark
 
 ```python
 # Install: pip install pytest-benchmark

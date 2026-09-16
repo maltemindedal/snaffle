@@ -16,14 +16,14 @@ You need:
 Snaffle is not published to PyPI, so there is no `pip install snaffle`. You
 install it from a clone.
 
-## Step 1 — Get the code
+## Step 1. Get the code
 
 ```bash
 git clone https://github.com/maltemindedal/snaffle.git
 cd snaffle
 ```
 
-## Step 2 — Create the environment
+## Step 2. Create the environment
 
 ```bash
 uv sync --group dev
@@ -33,7 +33,7 @@ This creates a `.venv/` in the project, installs `requests`, `tqdm`, and
 `urllib3`, installs Snaffle itself in editable mode, and adds the development
 tools (`ruff`, `ty`, `types-requests`).
 
-## Step 3 — Check the install
+## Step 3. Check the install
 
 ```bash
 uv run snaffle HELP
@@ -54,13 +54,13 @@ methods
 If that printed, Snaffle works. Every command from here on is prefixed with
 `uv run`, which runs it inside the environment you just created.
 
-## Step 4 — Make your first request
+## Step 4. Make your first request
 
 ```bash
 uv run snaffle GET https://httpbin.org/get
 ```
 
-Snaffle prints three sections — the status, every response header, and the
+Snaffle prints the status, every response header, and the
 body. Because httpbin answers with JSON, the body is pretty-printed:
 
 ```
@@ -84,7 +84,7 @@ Response Body:
 Commands are case-insensitive. `uv run snaffle get https://httpbin.org/get`
 does the same thing.
 
-## Step 5 — Send a JSON body
+## Step 5. Send a JSON body
 
 `POST`, `PUT`, and `PATCH` take `-d` with a JSON document. Wrap the whole
 document in single quotes so your shell leaves the double quotes alone:
@@ -94,14 +94,14 @@ uv run snaffle POST https://httpbin.org/post -d '{"key": "value"}'
 ```
 
 httpbin echoes what it received, so the response contains your body back under
-`"json"`. You did not need to set `Content-Type` — `-d` sends the body as JSON
+`"json"`. You did not need to set `Content-Type`. `-d` sends the body as JSON,
 and the header follows automatically.
 
 > On Windows `cmd.exe`, single quotes are not quoting characters. Use
 > PowerShell (where the example above works as written) or escape the inner
 > quotes for `cmd.exe`.
 
-## Step 6 — Add a header
+## Step 6. Add a header
 
 `-H` takes one `Key: Value` pair and can be repeated:
 
@@ -111,7 +111,7 @@ uv run snaffle GET https://httpbin.org/headers -H "Authorization: Bearer token12
 
 The response shows the header arriving at the server.
 
-## Step 7 — See what is happening
+## Step 7. See what is happening
 
 `-v` logs the outgoing request and the response metadata before the normal
 output:
@@ -127,10 +127,10 @@ Status Code: 200
 ...
 ```
 
-Use this when a request behaves unexpectedly — it is the fastest way to confirm
-what Snaffle actually sent.
+Use this when a request behaves unexpectedly. It shows
+what Snaffle sent.
 
-## Step 8 — Watch an error
+## Step 8. Watch an error
 
 Snaffle treats a non-2xx status as an error. It exits `1` and prints a message
 instead of the body:
@@ -144,10 +144,10 @@ Error: HTTP error occurred: 404 Client Error: NOT FOUND for url: https://httpbin
 ```
 
 A `404` costs exactly one round trip. Only connection failures and the
-transient statuses `408, 425, 429, 500, 502, 503, 504` are retried — retrying a
+transient statuses `408, 425, 429, 500, 502, 503, 504` are retried. Retrying a
 `404` would only multiply the latency of an answer that will not change.
 
-## Step 9 — Use it from Python
+## Step 9. Use it from Python
 
 The same client backs the CLI. Create one, use it, close it:
 
@@ -170,16 +170,16 @@ https://httpbin.org/get
 
 The `with` block matters. A client owns a pooled connection, and the context
 manager releases it on exit. Keeping one client for a batch of requests is also
-what makes the pooling pay off — the second request to a host skips the TCP and
+what makes pooling useful. The second request to a host skips the TCP and
 TLS handshake entirely.
 
 ## Where to go next
 
-- [Using Snaffle as a library](guides/using-as-a-library.md) — patterns beyond
-  the basics: batching, error handling, custom bodies.
-- [Downloading large files](guides/downloading-large-files.md) — progress bars
-  and streaming.
-- [CLI reference](reference/cli.md) — every flag.
-- [Python API reference](reference/python-api.md) — every argument, constant,
-  and exception.
-- [Troubleshooting](guides/troubleshooting.md) — when something goes wrong.
+- [Using Snaffle as a library](guides/using-as-a-library.md) covers batching,
+  error handling, and custom bodies.
+- [Downloading large files](guides/downloading-large-files.md) covers progress
+  bars and streaming.
+- [CLI reference](reference/cli.md) lists every flag.
+- [Python API reference](reference/python-api.md) lists every argument,
+  constant, and exception.
+- [Troubleshooting](guides/troubleshooting.md) covers common failures.

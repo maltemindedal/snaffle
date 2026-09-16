@@ -16,14 +16,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was meant to control. Both the formatter and the marker are gone.
 - Corrected the documented exception mapping, which was wrong in two places.
   Retries exhausted against a server that kept returning a transient status
-  raise `ResponseError` carrying the real status, not `HTTPConnectionError` —
+  raise `ResponseError` carrying the real status, not `HTTPConnectionError`.
   the adapter is built with `raise_on_status=False`, so the last response is
   reported rather than discarded. And a connect timeout raises
   `HTTPConnectionError`, not `HTTPClientError`, because
   `requests.exceptions.ConnectTimeout` subclasses `ConnectionError`. Only read
   timeouts reach `HTTPClientError`. Behaviour is unchanged; the documentation
   now matches it.
-- `HTTPClient.allowed_methods` is now the attribute method validation actually
+- `HTTPClient.allowed_methods` is now the attribute method validation
   reads. It was assigned in `__init__` and documented, but every request
   checked the `ALLOWED_METHODS` class constant instead, so the instance
   attribute did nothing.
@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error-to-code mapping is one visible thing in one module. `argparse` still
   exits `2` from inside `parse_args`; that is a distinct mechanism and is
   documented rather than routed through the return value. Observable behaviour
-  is unchanged — same messages, same codes, same stdout — but code that
+  is unchanged. Messages, codes, and stdout remain the same, but code that
   embedded `cli.main` and caught `SystemExit` to detect an error must check the
   return value instead.
 - The seven verb methods (`get`, `post`, `put`, `patch`, `delete`, `head`,
@@ -77,7 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration was the equivalent bar. Satisfying it added `@override`
   decorators (via `typing_extensions`, since the project floor is 3.10) to the
   test doubles in `tests/test_http_client.py` and corrected two of their
-  signatures — `log_message` and `handle_error` collapsed their base class's
+  signatures. `log_message` and `handle_error` collapsed their base class's
   parameters into `*args`, which violated the base signatures they claimed to
   override.
 - A `docs/` tree covering the tutorial, how-to guides, CLI and Python API
@@ -91,24 +91,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `HTTPClient` accepts a `session`, so the transport can be substituted at the
   client's own interface instead of by patching `requests.Session.request`.
   That patch point sits below the client and above the adapter, which is where
-  urllib3 retries, so it can never observe a retry — the project shipped a false
+  urllib3 retries, so it can never observe a retry. The project shipped a false
   claim about `POST` retry behaviour on exactly that mistake. A session mounted
   with a test adapter now observes retries with no socket opened. The parameter
   is last and defaults to `None`, which builds the pooled, retrying session as
   before; a session passed in is used as it arrives, so `retries` does not apply
   to it, and the client closes only a session it built. See ADR 0004.
-- ADR 0004, recording the session seam. It supersedes only the mitigation in
-  ADR 0001's Consequences — documenting the mock trap — and not its decision.
+- ADR 0004, recording session injection. It supersedes only the mitigation in
+  ADR 0001's Consequences, which documented the mock trap, but not its decision.
 
 ### Removed
 
 - mypy, in favour of ty (see Added). The `[tool.mypy]` configuration is gone
-  from `pyproject.toml`, including the `build/`/`dist/` excludes it needed —
+  from `pyproject.toml`, including the `build/` and `dist/` excludes it needed.
   ty honours `.gitignore`, so build output is skipped without configuration.
   `types-requests` stays: ty reads the same stubs for `requests`.
 - `snaffle.cli.show_examples` and the `suppress_output` parameter of
-  `snaffle.cli.main`. Neither was part of the documented public API — that is
-  `HTTPClient` and the three exceptions — and the flag existed only to quiet
+  `snaffle.cli.main`. Neither was part of the documented public API, which
+  consists of `HTTPClient` and the three exceptions. The flag existed only to quiet
   tests that already redirect stdout.
 
 ## [3.0.0] - 2026-07-23

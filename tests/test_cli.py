@@ -133,7 +133,7 @@ class TestCLI(unittest.TestCase):
     def test_invalid_timeout_returns_one(self) -> None:
         """Test a timeout the client rejects returns a CLI error.
 
-        `-t 0` passes argparse — it is a valid int — and is refused by
+        `-t 0` passes argparse because it is a valid int, then is refused by
         `HTTPClient.__init__` with a plain ValueError.
         """
         fake_stdout = io.StringIO()

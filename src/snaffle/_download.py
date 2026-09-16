@@ -2,9 +2,8 @@
 
 `snaffle.http_client` delegates a single decision here: whether the client
 should ask for an unread body and drain it itself, so that a progress bar can be
-fed as the bytes arrive. Everything that decision entails lives in this module
--- the size threshold, the deferred `tqdm` import, the chunk loop, and the
-write-back of the buffered body onto the response.
+fed as the bytes arrive. The size threshold, deferred `tqdm` import, chunk loop,
+and write-back of the buffered body onto the response all live in this module.
 
 The module is private. It is reachable only through `snaffle.http_client`, which
 is itself imported lazily, so importing `requests` at module scope here does not
@@ -19,9 +18,9 @@ from typing import TYPE_CHECKING, Any, cast
 import requests
 
 if TYPE_CHECKING:
-    # Type-only, so the run-time dependency still runs one way: `http_client`
+    # Type-only, so the run-time dependency still runs one way. `http_client`
     # imports this module, never the reverse. `ProgressBar` is documented as
-    # part of `http_client`'s surface, so it is defined there.
+    # part of `http_client`'s API, so it is defined there.
     from snaffle.http_client import ProgressBar
 
 
@@ -34,7 +33,7 @@ def should_buffer(method: str, show_progress: bool, kwargs: Mapping[str, Any]) -
 
     A caller who passed `stream=True` is going to read the body themselves and
     must get it unconsumed, so their request wins and no bar is drawn. An
-    explicit `stream=False` does not opt out -- buffering ends in a fully-read
+    explicit `stream=False` does not opt out. Buffering ends in a fully-read
     response, which is what that caller asked for either way.
 
     Args:
@@ -54,8 +53,8 @@ def buffer_into(
     """Drains the body through a progress bar and attaches it to the response.
 
     A bar is drawn only once the response's `Content-Length` reaches `min_size`;
-    below that -- and when the server sends no length at all, which reads as
-    `0` -- the body is still drained, just silently.
+    below that, or when the server sends no length at all, the body is still
+    drained without a bar. A missing length reads as `0`.
 
     The buffer is written back onto the response and the body marked consumed, so
     `.text` and `.json()` serve it rather than re-reading a drained socket. The

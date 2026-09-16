@@ -14,8 +14,8 @@ with HTTPClient() as client:
     response = client.get("https://httpbin.org/get")
 ```
 
-If the client's lifetime does not fit a `with` block — one held on a
-long-lived object, for instance — call `close()` when you are done:
+If the client's lifetime does not fit a `with` block, such as one held on a
+long-lived object, call `close()` when you are done:
 
 ```python
 class ApiWrapper:
@@ -31,7 +31,7 @@ A client that is never closed holds sockets open until garbage collection.
 ## Reuse one client for a batch
 
 Creating a client per request throws away the connection pool, which is the
-main thing the client buys you. Create one, loop inside it:
+reason to reuse the client. Create one, then loop inside it:
 
 ```python
 with HTTPClient() as client:
@@ -46,7 +46,7 @@ talking to several hosts keeps a connection to each.
 
 `HTTPClient` is not documented as thread-safe. The underlying
 `requests.Session` is generally safe for concurrent use across threads, but
-Snaffle has no tests covering it — give each thread its own client if you need
+Snaffle has no tests covering it. Give each thread its own client if you need
 concurrency.
 
 ## Handle errors
@@ -90,11 +90,11 @@ client.make_request("TRACE", url)  # ValueError: Unsupported HTTP method...
 ## Send bodies the CLI cannot
 
 Every keyword argument passes straight through to
-`requests.Session.request`, so the whole `requests` surface is available.
+`requests.Session.request`, so every argument it accepts is available.
 
 ```python
 with HTTPClient() as client:
-    # JSON — the same thing the CLI's -d flag does
+    # JSON, which is what the CLI's -d flag sends
     client.post("https://httpbin.org/post", json={"key": "value"})
 
     # Form-encoded
@@ -133,7 +133,7 @@ with HTTPClient(timeout=60, retries=5) as client:
 means one attempt and no retry. Both arguments must be greater than zero.
 
 Retries carry a `backoff_factor` of 0.3 and honour `Retry-After`. Which
-failures are retried depends on the method — a `POST` is never replayed once
+failures are retried depends on the method. A `POST` is never replayed once
 the request is on the wire. The table is in the
 [API reference](../reference/python-api.md#retry-behaviour); the reasoning is in
 [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
@@ -166,7 +166,7 @@ with HTTPClient(verbose=True) as client:
 [VERBOSE] Received response with status 200 and headers {...}
 ```
 
-This is `print`, not the `logging` module — there is no way to redirect it to a
+This uses `print`, not the `logging` module. You cannot redirect it to a
 logger short of capturing stdout. For structured logging, enable
 `requests`/`urllib3` logging instead:
 

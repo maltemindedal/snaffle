@@ -4,7 +4,7 @@ Snaffle is a thin, opinionated layer over `requests` and `urllib3`. It exists to
 make two things convenient: a readable HTTP CLI, and a client whose retry and
 pooling behaviour is decided once rather than at every call site.
 
-It is deliberately small — six modules, no plugins, no configuration files, no
+It has six modules, no plugins, no configuration files, and no
 state on disk.
 
 ## System context
@@ -20,14 +20,13 @@ flowchart LR
 ```
 
 The only external dependency at runtime is the HTTP stack: `requests`, `tqdm`,
-and `urllib3`. No database, queue, or service. Nothing is deployed — the
-artifact is a wheel.
+and `urllib3`. There is no database, queue, or service. The artifact is a wheel.
 
 ## Modules
 
 | Module | Responsibility |
 | --- | --- |
-| `__init__.py` | Public API surface. Re-exports the exceptions eagerly and resolves `HTTPClient` lazily via PEP 562. |
+| `__init__.py` | Public API. Re-exports the exceptions eagerly and resolves `HTTPClient` lazily via PEP 562. |
 | `__main__.py` | Process entry point for both `python -m snaffle` and the `snaffle` console script. The single process-level exit point: it turns `KeyboardInterrupt` into a clean exit, and `cli.main`'s returned code into the process status. |
 | `cli.py` | Argument parsing, header and body parsing, response rendering, error-to-exit-code mapping. Imports `HTTPClient` only after the help paths have been ruled out. |
 | `http_client.py` | The client: session construction, retry policy, method validation, exception translation. Asks `_download` whether to buffer a body, and hands it the body when the answer is yes. |
@@ -41,16 +40,16 @@ import time and on `http_client` at call time.
 
 The one edge that runs the other way is type-only: `_download` refers to
 `http_client.ProgressBar` under `TYPE_CHECKING`, because the protocol is
-documented as part of `http_client`'s surface while the code that builds a bar
+documented as part of `http_client`'s API while the code that builds a bar
 lives in `_download`. Nothing is imported at run time, so the graph above holds.
 
 `_download` imports `requests` at module scope, as `http_client` does. That is
 safe because nothing reaches `_download` except through `http_client`, and
-`http_client` itself is only imported once a request is actually being made —
-see [ADR 0002](decisions/0002-lazy-imports-on-the-cli-help-path.md). `tqdm`
+`http_client` itself is only imported once a request is made. See
+[ADR 0002](decisions/0002-lazy-imports-on-the-cli-help-path.md). `tqdm`
 stays deferred inside `_download`, to a function.
 
-Imports of first-party code are absolute throughout — `from snaffle.exceptions
+Imports of first-party code are absolute throughout, such as `from snaffle.exceptions
 import ...`, never relative.
 
 ## Request flow
@@ -88,8 +87,8 @@ a `RetryError`. This is why a test that mocks `Session.request` cannot observe
 retry behaviour at all.
 
 **The error boundary is `make_request`.** Every `requests` exception is
-translated there into this package's hierarchy, so callers — the CLI included —
-never handle a `requests` type. The original is preserved on `__cause__`.
+translated there into this package's hierarchy, so callers, including the CLI,
+never handle a `requests` type. The original remains on `__cause__`.
 
 ## Design commitments
 
@@ -100,13 +99,13 @@ schemes, pooling up to `POOL_SIZE` (16) connections. A second request to a host
 skips the TCP and TLS handshake.
 
 The cost is that a client owns an OS resource and must be closed. This is a
-deliberate trade — it makes the common case (a batch of requests to one host)
-fast, at the price of requiring a context manager. See
+deliberate trade. It makes a batch of requests to one host faster, but requires
+a context manager. See
 [ADR 0001](decisions/0001-selective-retries-and-connection-pooling.md).
 
 The client builds that session unless one is passed to the constructor, which is
-where the transport is substituted — including in tests, where it is the only
-seam above the socket that leaves the retry loop intact. A caller-supplied
+where the transport is substituted. In tests, it is the only boundary above
+the socket that leaves the retry loop intact. A caller-supplied
 session brings its own adapters, so it brings its own retry policy and pool;
 `retries` does not reach it. Ownership follows construction: **a client closes
 only a session it built**, because one it was given may be shared. See
@@ -125,10 +124,9 @@ See [ADR 0001](decisions/0001-selective-retries-and-connection-pooling.md).
 ### The help path does not import the network stack
 
 `snaffle HELP`, `snaffle --help`, and argument errors never import `requests`.
-This is enforced in two places — `cli.main` defers the import until after the
-help branch, and `__init__.__getattr__` defers it for library users — and
-guarded by a test that runs a subprocess and asserts `requests` is absent from
-`sys.modules`. See
+`cli.main` defers the import until after the help branch.
+`__init__.__getattr__` defers it for library users. A subprocess test asserts
+that `requests` is absent from `sys.modules`. See
 [ADR 0002](decisions/0002-lazy-imports-on-the-cli-help-path.md).
 
 ### `GET` streams only when something consumes the stream
@@ -140,34 +138,34 @@ gets an unconsumed response: their request wins over the bar, because a bar is
 fed by reading the body and reading it is what they asked to do themselves.
 
 That whole decision lives in `_download.should_buffer`, not in `make_request`.
-Draining reaches past the seam three times — it forces `stream=True`, writes
-`response._content`, and writes `response._content_consumed` — so it is worth a
-module with a name on it rather than four inline branches. An earlier revision
-had it inline, and the `stream=True` opt-out above was documented in three
+Draining crosses that module boundary three times. It forces `stream=True`,
+writes `response._content`, and writes `response._content_consumed`. Keeping
+these operations in one named module avoids four inline branches. An earlier
+revision had it inline, and the `stream=True` opt-out above was documented in three
 places while the code did the opposite.
 
 ### The distribution is typed
 
-`ty`, with every rule at error level, covers `src/` and `tests/`, and the wheel ships a PEP 561
-`py.typed` marker, verified in CI by unzipping the built wheel. Downstream type
-checkers use the annotations with no configuration.
+`ty`, with every rule at error level, covers `src/` and `tests/`. The wheel ships
+a PEP 561 `py.typed` marker, verified in CI by unzipping the built wheel.
+Downstream type checkers use the annotations with no configuration.
 
 ## Testing strategy
 
 Tests are `unittest`, one module per source module. They split into four
-kinds, and the split is load-bearing:
+kinds:
 
-- **Mocked at `Session.request`** — most client and CLI tests. Fast, and
-  correct for anything *above* the adapter.
-- **Asserted against `urllib3.util.retry.Retry` directly** — `TestRetryPolicy`.
-  Verifies the policy object without any I/O.
-- **Injected at the session seam** — `TestInjectedSession` and
+- Most client and CLI tests mock `Session.request`. This is fast and correct for
+  anything *above* the adapter.
+- `TestRetryPolicy` checks `urllib3.util.retry.Retry` directly and verifies the
+  policy object without any I/O.
+- `TestInjectedSession` and
   `TestRetryWithoutASocket` pass a session to the constructor. Because the
   substitution happens at the client's interface rather than below it, the
   adapter and urllib3's retry loop are still there: `TestRetryWithoutASocket`
   mounts a real adapter over a pool that fails every connection attempt, and
   counts them, without opening a socket.
-- **Against a real socket** — `TestRetryAgainstRealServer` starts a
+- `TestRetryAgainstRealServer` starts a
   `ThreadingHTTPServer` on an ephemeral port and counts arriving requests. Its
   subject is the whole stack, end to end. `TestProgressAgainstRealServer` does
   the same for the streaming opt-out, which needs a real body to prove the
@@ -189,5 +187,5 @@ It does not:
 - expose the retry count as a CLI flag.
 
 Several of these are reachable through the [Python API](../reference/python-api.md)
-because they fall out of forwarding `**kwargs` to `requests` — that is a
+because forwarding `**kwargs` to `requests` happens to support them. That is a
 consequence of the design, not a supported CLI feature.

@@ -1,35 +1,19 @@
-"""Custom exceptions for the snaffle HTTP client.
-
-This module defines a hierarchy of custom exceptions to provide more specific
-error information when using the snaffle client.
-"""
+"""Exceptions raised by the Snaffle HTTP client."""
 
 
 class HTTPClientError(Exception):
-    """Base exception for all errors raised by the snaffle client.
-
-    This exception serves as the base for more specific client-related errors,
-    allowing for consolidated error handling.
-    """
+    """Base class for errors raised by the Snaffle client."""
 
     pass
 
 
 class HTTPConnectionError(HTTPClientError):
-    """Raised when a connection to the target server fails.
-
-    This error typically occurs due to network issues, DNS failures, or if the
-    server is unreachable.
-    """
+    """Raised when the client cannot connect to the target server."""
 
     pass
 
 
 class ResponseError(HTTPClientError):
-    """Raised when the server returns an unsuccessful HTTP status code.
-
-    This error is triggered for responses with 4xx (client error) or 5xx
-    (server error) status codes.
-    """
+    """Raised when the server returns a 4xx or 5xx status code."""
 
     pass

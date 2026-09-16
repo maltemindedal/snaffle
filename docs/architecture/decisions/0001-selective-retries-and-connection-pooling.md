@@ -58,7 +58,7 @@ behaviour was still correct, only wasteful.
 
 Retries now cost latency they did not before: exponential backoff adds roughly
 half a second across the default three attempts for a request destined to fail.
-That is the deliberate trade — not hammering a server that is already
+That delay prevents repeated requests from hammering a server that is already
 struggling.
 
 Retries became untestable through the obvious mock. They happen inside the
@@ -68,9 +68,8 @@ against such a mock and shipped a false claim in the README on the strength of
 it. The project now tests retry behaviour against a real socket
 (`TestRetryAgainstRealServer`) or against the `Retry` object directly
 (`TestRetryPolicy`), and `CONTRIBUTING.md` records the trap.
-[ADR 0004](0004-inject-the-session.md) adds a third option — passing a session
-to the constructor — and supersedes this mitigation, though not the decision
-above.
+[ADR 0004](0004-inject-the-session.md) adds a third option by passing a session
+to the constructor. It supersedes this mitigation, though not the decision above.
 
 `--progress` downloads hold a larger working set, from the bigger chunk size.
 

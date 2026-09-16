@@ -1,8 +1,4 @@
-"""HTTP client for making HTTP requests with retries.
-
-This module provides a flexible HTTP client for making RESTful API calls,
-with support for customizable timeouts, automatic retries on failures,
-and optional progress bars for large downloads.
+"""HTTP client with configurable timeouts, retries, and download progress.
 
 The client keeps a pooled :class:`requests.Session` alive for its lifetime, so
 repeated calls to the same host reuse an established TCP/TLS connection instead
@@ -27,7 +23,7 @@ __all__ = ["HTTPClient", "ProgressBar"]
 class ProgressBar(Protocol):
     """Protocol for the subset of progress-bar methods used by the client.
 
-    Defined here because it is documented as part of this module's surface.
+    Defined here because it is part of this module's documented API.
     `_download` builds the bars and refers to this protocol under
     `TYPE_CHECKING` only, so the dependency between the two modules still runs
     one way at run time.
@@ -41,10 +37,10 @@ class ProgressBar(Protocol):
 
 
 class HTTPClient:
-    """A versatile HTTP client for making requests to a web server.
+    """Send HTTP requests through a pooled session.
 
-    This client supports common HTTP methods (GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS)
-    and includes features like configurable timeouts, retries, and verbose logging.
+    The client supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS. Its
+    settings control timeouts, retries, verbose logging, and download progress.
 
     Connections are pooled across requests, so a client owns an operating-system
     resource. Use it as a context manager, or call :meth:`close`, to release the
@@ -54,20 +50,18 @@ class HTTPClient:
             client.get("https://example.com")
 
     The session is built by :meth:`_build_session` unless one is passed to the
-    constructor. **A client closes only a session it built**: one it was given
-    belongs to the caller, who may be sharing it, and closing it would pull the
-    pool out from under them.
+    constructor. A client closes only a session it built. A session passed by
+    the caller may be shared, so the caller remains responsible for closing it.
 
-    Passing a session is how the transport is substituted without patching
-    `requests.Session.request` -- a mock there sits above the adapter and cannot
-    observe a retry. An injected session brings its own adapters, so it also
-    brings its own retry policy and connection pool; `retries` builds the default
-    session and does not reach one supplied here.
+    Pass a session to substitute the transport without patching
+    `requests.Session.request`. A mock there sits above the adapter and cannot
+    observe a retry. An injected session supplies its own adapters, retry policy,
+    and connection pool. `retries` only configures the default session.
 
     Retries use exponential backoff and are applied to:
 
-    * connection failures, for every method -- a request that never reached the
-      server cannot have been acted on twice;
+    * connection failures, for every method, because a request that never reached
+      the server cannot have been acted on twice;
     * read failures and the statuses in :attr:`RETRY_STATUSES`, for idempotent
       methods only, so a ``POST`` that may already have been processed is never
       replayed.
@@ -79,8 +73,8 @@ class HTTPClient:
     Attributes:
         timeout (int): The request timeout in seconds.
         retries (int): The total number of attempts made for a failed request.
-        verbose (bool): If True, enables detailed logging of requests and responses.
-        show_progress (bool): If True, displays a progress bar for large downloads.
+        verbose (bool): Whether to log requests and responses.
+        show_progress (bool): Whether to show progress for large downloads.
         allowed_methods (frozenset): The methods this instance accepts, read by
             every request. Initialised from :attr:`ALLOWED_METHODS`.
         MIN_SIZE_FOR_PROGRESS (int): The minimum file size in bytes to trigger the progress bar.
@@ -111,14 +105,14 @@ class HTTPClient:
         Args:
             timeout (int, optional): The timeout for HTTP requests in seconds. Defaults to 30.
             retries (int, optional): The total number of attempts for failed requests. Defaults to 3.
-            verbose (bool, optional): Whether to enable verbose logging. Defaults to False.
-            show_progress (bool, optional): Whether to show a progress bar for large downloads. Defaults to False.
+            verbose (bool, optional): Whether to log requests and responses. Defaults to False.
+            show_progress (bool, optional): Whether to show progress for large downloads. Defaults to False.
             session (requests.Session, optional): A session to send through. Defaults
                 to one built by :meth:`_build_session`. A session passed here is
-                used as it arrives: `retries` builds the default session and is not
-                applied to this one, because the retry policy and the connection
-                pool both come from the session's mounted adapters. The client does
-                not close a session it did not build; see :meth:`close`.
+                used as supplied. `retries` only configures the default session;
+                an injected session gets its retry policy and connection pool from
+                its mounted adapters. The client does not close an injected
+                session. See :meth:`close`.
         """
         if timeout <= 0:
             raise ValueError("timeout must be greater than 0")
@@ -138,7 +132,7 @@ class HTTPClient:
         """Builds a session whose adapters pool connections and retry with backoff.
 
         urllib3 applies its idempotent-method filter to read errors and to
-        retryable statuses, but not to connection errors -- a request that never
+        retryable statuses, but not to connection errors. A request that never
         left the machine cannot have been processed twice, so retrying it is safe
         for every method. That asymmetry is deliberate; see the class docstring.
         """
@@ -194,11 +188,10 @@ class HTTPClient:
         return normalized_method
 
     def make_request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
-        """Makes an HTTP request with retry logic and error handling.
+        """Send an HTTP request and return its response.
 
-        This is the core method for all HTTP operations performed by the client.
-        Retries with exponential backoff are handled by the session's adapter;
-        see the class docstring for which failures are retried for which methods.
+        The session's adapter handles retries with exponential backoff. See the
+        class docstring for which failures are retried for each method.
 
         A `GET` sent while `show_progress` is on streams its body and drains it
         through a progress bar into a buffer, so the response that comes back is
@@ -208,7 +201,7 @@ class HTTPClient:
         Args:
             method (str): The HTTP method to use (e.g., 'GET', 'POST').
             url (str): The URL to send the request to.
-            **kwargs: Additional keyword arguments to pass to `requests.Session.request`.
+            **kwargs: Keyword arguments passed to `requests.Session.request`.
 
         Returns:
             requests.Response: The HTTP response object.

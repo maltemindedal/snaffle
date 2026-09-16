@@ -30,7 +30,7 @@ Conventions:
 
 - Package and module names are short and all-lowercase (PEP 8). The import
   package is `snaffle`; there is no `Snaffle`.
-- Every public module, class, and function carries a docstring — including
+- Every public module, class, and function has a docstring, including
   dunder methods such as `__enter__` and `__exit__`.
 - The version is declared once, in `pyproject.toml`. `snaffle.__version__`
   reads it back from the installed distribution's metadata; do not hard-code
@@ -66,7 +66,7 @@ all = "error"` in `pyproject.toml`), over both `src/` and `tests/`.
 
 Do not mock `requests.Session.request` when the behaviour under test involves
 retries. That mock sits *above* the adapter where urllib3's retry logic lives,
-so it cannot observe retries at all — an earlier revision shipped a false claim
+so it cannot observe retries. An earlier revision shipped a false claim
 about `POST` retry behaviour on exactly that mistake. Three ways to test retries
 without it:
 
@@ -74,8 +74,8 @@ without it:
   client's own interface rather than below it, so the adapter and its retry
   loop stay in place. `TestRetryWithoutASocket` mounts an adapter over a pool
   that fails every connection attempt and counts them, with no socket opened.
-- Count requests arriving at a real socket — `TestRetryAgainstRealServer`.
-- Assert against `urllib3.util.retry.Retry` directly — `TestRetryPolicy`.
+- `TestRetryAgainstRealServer` counts requests arriving at a real socket.
+- `TestRetryPolicy` checks `urllib3.util.retry.Retry` directly.
 
 A session passed to the constructor is used as it arrives: `retries` does not
 apply to it, and the client does not close it. See

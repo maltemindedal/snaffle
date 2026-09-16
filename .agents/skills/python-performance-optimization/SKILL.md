@@ -1,13 +1,14 @@
 ---
 name: python-performance-optimization
-description: Profile and optimize Python code using cProfile, memory profilers, and performance best practices. Use when debugging slow Python code, optimizing bottlenecks, or improving application performance.
+description: Profile Python CPU and memory use, find measured bottlenecks, and improve slow code without unnecessary rewrites.
 ---
 
-# Python Performance Optimization
+# Python performance optimization
 
-Comprehensive guide to profiling, analyzing, and optimizing Python code for better performance, including CPU profiling, memory optimization, and implementation best practices.
+Measure Python CPU time and memory use, find the bottleneck, and change only
+the code responsible for it.
 
-## When to Use This Skill
+## When to use this skill
 
 - Identifying performance bottlenecks in Python applications
 - Reducing application latency and response times
@@ -19,33 +20,33 @@ Comprehensive guide to profiling, analyzing, and optimizing Python code for bett
 - Implementing high-performance algorithms
 - Profiling production applications
 
-## Core Concepts
+## What to measure
 
-### 1. Profiling Types
+### Profiling types
 
-- **CPU Profiling**: Identify time-consuming functions
-- **Memory Profiling**: Track memory allocation and leaks
-- **Line Profiling**: Profile at line-by-line granularity
-- **Call Graph**: Visualize function call relationships
+- CPU profiling identifies functions that consume the most time.
+- Memory profiling tracks allocations and retained objects.
+- Line profiling measures individual lines.
+- A call graph shows which functions call one another.
 
-### 2. Performance Metrics
+### Metrics
 
-- **Execution Time**: How long operations take
-- **Memory Usage**: Peak and average memory consumption
-- **CPU Utilization**: Processor usage patterns
-- **I/O Wait**: Time spent on I/O operations
+- Execution time measures how long an operation takes.
+- Memory usage includes peak and average consumption.
+- CPU utilization measures processor use.
+- I/O wait measures time blocked on input and output.
 
-### 3. Optimization Strategies
+### Ways to improve performance
 
-- **Algorithmic**: Better algorithms and data structures
-- **Implementation**: More efficient code patterns
-- **Parallelization**: Multi-threading/processing
-- **Caching**: Avoid redundant computation
-- **Native Extensions**: C/Rust for critical paths
+- Choose algorithms and data structures with lower cost.
+- Remove repeated work from the implementation.
+- Run independent work concurrently when the workload allows it.
+- Cache expensive results when inputs repeat.
+- Move measured hot paths to C or Rust when Python remains the bottleneck.
 
-## Quick Start
+## Quick start
 
-### Basic Timing
+### Basic timing
 
 ```python
 import time
@@ -63,16 +64,16 @@ def measure_time():
     return result
 
 
-# Better: use timeit for accurate measurements
+# Use timeit for repeated measurements
 import timeit
 
 execution_time = timeit.timeit("sum(range(1000000))", number=100)
 print(f"Average time: {execution_time / 100:.6f} seconds")
 ```
 
-## Profiling Tools
+## Profiling tools
 
-### Pattern 1: cProfile - CPU Profiling
+### Pattern 1: CPU profiling with cProfile
 
 ```python
 import cProfile
@@ -118,7 +119,7 @@ if __name__ == "__main__":
     stats.dump_stats("profile_output.prof")
 ```
 
-**Command-line profiling:**
+#### Command-line profiling
 
 ```bash
 # Profile a script
@@ -131,7 +132,7 @@ python -m pstats output.prof
 # stats 10
 ```
 
-### Pattern 2: line_profiler - Line-by-Line Profiling
+### Pattern 2: line profiling with line_profiler
 
 ```python
 # Install: pip install line-profiler
@@ -151,7 +152,7 @@ def process_data(data):
 # kernprof -l -v script.py
 ```
 
-**Manual line profiling:**
+#### Manual line profiling
 
 ```python
 from line_profiler import LineProfiler
@@ -178,7 +179,7 @@ if __name__ == "__main__":
     lp.print_stats()
 ```
 
-### Pattern 3: memory_profiler - Memory Usage
+### Pattern 3: memory use with memory_profiler
 
 ```python
 # Install: pip install memory-profiler
@@ -208,7 +209,7 @@ if __name__ == "__main__":
 # python -m memory_profiler script.py
 ```
 
-### Pattern 4: py-spy - Production Profiling
+### Pattern 4: production profiling with py-spy
 
 ```bash
 # Install: pip install py-spy
@@ -226,9 +227,9 @@ py-spy record -o profile.svg -- python script.py
 py-spy dump --pid 12345
 ```
 
-## Optimization Patterns
+## Optimization patterns
 
-### Pattern 5: List Comprehensions vs Loops
+### Pattern 5: list comprehensions and loops
 
 ```python
 import timeit
@@ -260,13 +261,13 @@ print(f"Comprehension: {fast_time:.4f}s")
 print(f"Speedup: {slow_time / fast_time:.2f}x")
 
 
-# Even faster for simple operations: map
-def faster_squares(n):
-    """Use map for even better performance."""
+# Alternative implementation with map
+def mapped_squares(n):
+    """Create squares with map."""
     return list(map(lambda x: x**2, range(n)))
 ```
 
-### Pattern 6: Generator Expressions for Memory
+### Pattern 6: generator expressions
 
 ```python
 import sys
@@ -294,7 +295,7 @@ print(f"Generator size: {sys.getsizeof(gen_data)} bytes")
 # Generators use constant memory regardless of size
 ```
 
-### Pattern 7: String Concatenation
+### Pattern 7: string concatenation
 
 ```python
 import timeit
@@ -331,7 +332,7 @@ print(f"Join (generator): {fast:.4f}s")
 print(f"Join (list): {faster:.4f}s")
 ```
 
-### Pattern 8: Dictionary Lookups vs List Searches
+### Pattern 8: dictionary lookups and list searches
 
 ```python
 import timeit
@@ -363,7 +364,7 @@ print(f"Dict search: {dict_time:.6f}s")
 print(f"Speedup: {list_time / dict_time:.0f}x")
 ```
 
-### Pattern 9: Local Variable Access
+### Pattern 9: local variable access
 
 ```python
 import timeit
@@ -398,7 +399,7 @@ print(f"Local access: {local_time:.4f}s")
 print(f"Speedup: {global_time / local_time:.2f}x")
 ```
 
-### Pattern 10: Function Call Overhead
+### Pattern 10: function call overhead
 
 ```python
 import timeit
@@ -433,22 +434,24 @@ print(f"Inline: {inline_time:.4f}s")
 print(f"Function calls: {function_time:.4f}s")
 ```
 
-For advanced optimization techniques including NumPy vectorization, caching, memory management, parallelization, async I/O, database optimization, and benchmarking tools, see [references/advanced-patterns.md](references/advanced-patterns.md)
+For NumPy vectorization, caching, memory management, parallel execution, async
+I/O, database queries, and benchmarks, see
+[the advanced reference](references/advanced-patterns.md).
 
-## Best Practices
+## Working rules
 
-1. **Profile before optimizing** - Measure to find real bottlenecks
-2. **Focus on hot paths** - Optimize code that runs most frequently
-3. **Use appropriate data structures** - Dict for lookups, set for membership
-4. **Avoid premature optimization** - Clarity first, then optimize
-5. **Use built-in functions** - They're implemented in C
-6. **Cache expensive computations** - Use lru_cache
-7. **Batch I/O operations** - Reduce system calls
-8. **Use generators** for large datasets
-9. **Consider NumPy** for numerical operations
-10. **Profile production code** - Use py-spy for live systems
+1. Profile before changing code.
+2. Optimize measured hot paths.
+3. Use dictionaries for keyed lookups and sets for membership checks.
+4. Keep clear code until measurements justify added complexity.
+5. Prefer built-in functions when they fit the job.
+6. Use `lru_cache` when expensive calls repeat with the same inputs.
+7. Batch I/O to reduce system calls.
+8. Use generators when a collection does not need to be stored.
+9. Measure NumPy for large numerical workloads.
+10. Use `py-spy` to profile a running process.
 
-## Common Pitfalls
+## Common mistakes
 
 - Optimizing without profiling
 - Using global variables unnecessarily
