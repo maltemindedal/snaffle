@@ -89,7 +89,7 @@ def buffer_into(
     response._content = b"".join(chunks)
     # Mark the body as fully read so `.text`/`.json()` serve the buffer we just
     # built instead of re-reading a drained socket.
-    cast(Any, response)._content_consumed = True
+    response._content_consumed = True
 
 
 def _create_progress_bar(total: int, min_size: int, desc: str) -> ProgressBar | None:
