@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A `GET` with `show_progress` on that came back as a 4xx or 5xx no longer
+  leaves its connection checked out. The request is sent as `stream=True`, and
+  the error was raised without reading the body, so the socket stayed open until
+  the exception was garbage collected. A script that kept its `ResponseError`
+  objects held one socket per failure, and every failure lost connection reuse;
+  `client.close()` could not release them. The error body is now read before
+  the exception is raised, as it already was without `show_progress`, so
+  `error.__cause__.response.text` still works. A caller who passes
+  `stream=True` still gets the response unread.
 - The `speedups` extra now installs the codecs urllib3 actually loads. It named
   `zstandard`, which urllib3 stopped using in 2.6.0, so on Python 3.10 to 3.13
   the documented Zstandard negotiation never happened even with the extra
