@@ -12,6 +12,7 @@ undo the start-up win recorded in ADR 0002. `tests/test_init.py` guards that.
 
 from __future__ import annotations
 
+import io
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
@@ -73,8 +74,8 @@ def buffer_into(
         total = 0
     progress_bar = _create_progress_bar(total, min_size, desc)
 
-    chunks: list[bytes] = []
-    append = chunks.append
+    buffer = io.BytesIO()
+    write = buffer.write
     update = progress_bar.update if progress_bar is not None else None
 
     try:
@@ -82,14 +83,16 @@ def buffer_into(
             if not chunk:
                 continue
 
-            append(chunk)
+            write(chunk)
             if update is not None:
                 update(len(chunk))
     finally:
         if progress_bar is not None:
             progress_bar.close()
 
-    response._content = b"".join(chunks)
+    # `getvalue` hands back the buffer itself, trimmed in place, where joining a
+    # list of chunks would build a second body-sized copy.
+    response._content = buffer.getvalue()
     # Mark the body as fully read so `.text`/`.json()` serve the buffer we just
     # built instead of re-reading a drained socket.
     response._content_consumed = True

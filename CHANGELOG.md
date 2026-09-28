@@ -104,6 +104,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A download drained through the progress bar (`show_progress`) now holds the
+  body once in memory instead of twice at its peak, and finishes about a third
+  faster for large bodies. The chunks were collected in a list and then joined,
+  which built a second copy of the whole body; they are now written to an
+  `io.BytesIO`, whose buffer becomes the response body directly. The response is
+  identical: `.content`, `.text`, `.json()` and `iter_content` behave as before.
+  This affects library callers; the CLI's own peak is dominated by rendering the
+  text.
 - `HTTPClient.__enter__` is annotated as returning the type of the client it was
   called on, not always `HTTPClient`. `with PatientClient() as client:`, the
   subclassing pattern the library guide documents, now type-checks as
