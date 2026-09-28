@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 import requests
 from requests.adapters import HTTPAdapter
 from typing_extensions import override
-from urllib3.connectionpool import ConnectionPool, HTTPConnectionPool
+from urllib3.connectionpool import HTTPConnectionPool
 from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
 from urllib3.util.retry import Retry
 
@@ -465,7 +465,7 @@ class _NoSocketAdapter(HTTPAdapter):
         verify: bool | str | None,
         proxies: Any = None,
         cert: Any = None,
-    ) -> ConnectionPool:
+    ) -> HTTPConnectionPool:
         """Hands `requests` the pool that never connects."""
         return self.no_socket_pool
 
