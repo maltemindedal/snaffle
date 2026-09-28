@@ -130,7 +130,9 @@ def _emit_response(response: requests.Response) -> None:
         parts.append("\nResponse Body:\n")
         try:
             parts.append(json.dumps(json.loads(text), indent=4))
-        except ValueError:
+        except (ValueError, RecursionError):
+            # A body nested deeply enough to exhaust the parser raises
+            # `RecursionError`, which is not a `ValueError`. Print it as text.
             parts.append(text)
         parts.append("\n")
 

@@ -87,6 +87,30 @@ class TestCLI(unittest.TestCase):
         )
 
     @patch(MAKE_REQUEST)
+    def test_a_too_deeply_nested_json_body_is_printed_as_text(
+        self, mock_request: MagicMock
+    ) -> None:
+        """Test a body the JSON parser cannot handle falls back to plain text.
+
+        Regression: nesting deep enough to exhaust the parser raises
+        `RecursionError`, which is not a `ValueError`, so the CLI died with a
+        traceback and printed neither the status nor the body. A server chooses
+        the body. 100,000 levels fails on every supported Python.
+        """
+        body = "[" * 100_000 + "]" * 100_000
+        mock_request.return_value = self._build_response(
+            text=body, headers={"content-type": "application/json"}
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+            exit_code = main(["GET", "https://api.example.com"])
+
+        output = fake_stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn("Status Code: 200", output)
+        self.assertIn(body, output)
+
+    @patch(MAKE_REQUEST)
     def test_lowercase_alias_sends_the_uppercase_method(
         self, mock_request: MagicMock
     ) -> None:
