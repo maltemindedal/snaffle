@@ -5,6 +5,7 @@
 one exit that still happens elsewhere is argparse's `2` for a bad command line.
 """
 
+import os
 import sys
 
 from snaffle.cli import main
@@ -14,14 +15,25 @@ def run() -> None:
     """Run the package entrypoint, exiting with the code the CLI returns.
 
     `Ctrl+C` is the one outcome the CLI does not report as a return value; it
-    is caught here and reported as a clean exit `0`.
+    is caught here and reported as a clean exit `0`. A reader that exits early,
+    as in `snaffle GET url | head`, closes the pipe under the CLI's output; that
+    is reported as exit `1` without a traceback.
     """
 
     try:
-        sys.exit(main())
+        code = main()
+        # Flush inside the try, so a closed pipe surfaces here instead of at
+        # interpreter shutdown, where it would become exit status 120.
+        sys.stdout.flush()
+        sys.exit(code)
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
         sys.exit(0)
+    except BrokenPipeError:
+        # Point stdout at devnull so the flush Python makes on exit cannot fail
+        # again. This is the recipe in the `signal` module's note on SIGPIPE.
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        sys.exit(1)
 
 
 if __name__ == "__main__":
