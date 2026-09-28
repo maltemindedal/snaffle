@@ -18,7 +18,7 @@ from urllib3.connectionpool import ConnectionPool, HTTPConnectionPool
 from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
 from urllib3.util.retry import Retry
 
-from snaffle.exceptions import HTTPConnectionError, ResponseError
+from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 from snaffle.http_client import HTTPClient
 
 SESSION_REQUEST = "requests.Session.request"
@@ -619,6 +619,57 @@ class TestProgressAgainstRealServer(_LocalServerTestCase):
             self.assertTrue(cast(Any, response)._content_consumed)
             self.assertIn("%", stderr.getvalue(), "a bar is drawn for a download")
             self.assertEqual(response.content, LARGE_BODY)
+
+
+class _OversizedChunkLineHandler(_QuietHandler):
+    """Answers with a chunked body whose size line is padded past 64 KiB."""
+
+    def do_GET(self) -> None:
+        """Sends one valid five-byte chunk, its size written with 70,000 zeros."""
+        self.send_response(200)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        self.wfile.write(b"0" * 70_000 + b"5\r\nhello\r\n0\r\n\r\n")
+
+
+class TestHostileResponses(_LocalServerTestCase):
+    """What a server that misbehaves on purpose can and cannot do to a client."""
+
+    handler = _OversizedChunkLineHandler
+
+    def test_an_oversized_chunk_size_line_is_refused(self) -> None:
+        """Test a chunk-size line over 64 KiB fails fast instead of being buffered.
+
+        Regression for urllib3 < 2.8.0, which buffered a chunk-size line of any
+        length, so one response could exhaust the client's memory. The body
+        here is well-formed apart from the padding, so an unpatched urllib3
+        returns `b"hello"` and this test fails.
+        """
+        with (
+            HTTPClient(retries=1) as client,
+            self.assertRaises(HTTPClientError) as caught,
+        ):
+            client.get(f"{self.base_url}/")
+
+        self.assertIn("chunk size line", str(caught.exception))
+
+
+class TestMalformedHosts(unittest.TestCase):
+    """Hosts urllib3 refuses to parse are the caller's mistake, not an outage."""
+
+    def test_a_host_with_a_space_is_a_client_error(self) -> None:
+        """Test a raw space in the host is rejected before any connection attempt.
+
+        urllib3 < 2.8.0 accepted it and looked the mangled name up, so the
+        failure surfaced as an `HTTPConnectionError` after a DNS round trip.
+        """
+        with (
+            HTTPClient(retries=1) as client,
+            self.assertRaises(HTTPClientError) as caught,
+        ):
+            client.get("http://exa mple.com/")
+
+        self.assertNotIsInstance(caught.exception, HTTPConnectionError)
 
 
 if __name__ == "__main__":
