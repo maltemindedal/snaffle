@@ -74,8 +74,13 @@ with HTTPClient() as client:
     ):
         for chunk in response.iter_content(chunk_size=65536):
             handle.write(chunk)
-            bar.update(len(chunk))
+            bar.update(response.raw.tell() - bar.n)
 ```
+
+`Content-Length` counts the bytes the server sent. When the response is
+compressed, `iter_content` yields more than that, so `len(chunk)` would run the
+bar past 100%. `response.raw.tell()` is how many bytes have been read off the
+wire, which is what the total measures.
 
 ## What `show_progress=True` does
 
@@ -84,7 +89,7 @@ changes `GET` in three ways:
 
 1. The request is sent with `stream=True`.
 2. The body is drained through `iter_content` in `DOWNLOAD_CHUNK_SIZE` chunks,
-   updating the bar, and buffered into memory.
+   updating the bar by the bytes read off the wire, and buffered into memory.
 3. The buffer is attached to the response and marked consumed, so `.text` and
    `.json()` serve it rather than re-reading a drained socket.
 

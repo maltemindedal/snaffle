@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import contextlib
+import gzip
 import importlib.util
 import io
 import os
+import random
+import re
 import socketserver
 import threading
 import unittest
@@ -691,6 +694,50 @@ class TestProgressAgainstRealServer(_LocalServerTestCase):
             self.assertTrue(cast(Any, response)._content_consumed)
             self.assertIn("%", stderr.getvalue(), "a bar is drawn for a download")
             self.assertEqual(response.content, LARGE_BODY)
+
+
+#: About 200 KB that will not compress, then 2 MB that compresses to almost nothing:
+#: a few hundred KB on the wire that decode to 2.2 MB.
+COMPRESSIBLE_BODY = random.Random(0).randbytes(200_000) + b"\0" * 2_000_000
+GZIPPED_BODY = gzip.compress(COMPRESSIBLE_BODY, compresslevel=1)
+
+
+class _GzipBodyHandler(_QuietHandler):
+    """Serves `COMPRESSIBLE_BODY` gzip-encoded, with the compressed `Content-Length`."""
+
+    def do_GET(self) -> None:
+        """Answers with the gzip body."""
+        self.send_response(200)
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(GZIPPED_BODY)))
+        self.end_headers()
+        self.wfile.write(GZIPPED_BODY)
+
+
+class TestProgressOnACompressedBody(_LocalServerTestCase):
+    """The bar counts what crossed the wire, which is what `Content-Length` counts."""
+
+    handler = _GzipBodyHandler
+
+    def test_the_bar_ends_at_one_hundred_percent(self) -> None:
+        """Test a compressed download does not run the bar past its total.
+
+        Regression: the bar's total is the `Content-Length`, which counts the
+        compressed bytes on the wire, but it was advanced by the decoded chunks,
+        so this body finished at about 1,100%.
+        """
+        stderr = io.StringIO()
+        with (
+            patch.object(HTTPClient, "MIN_SIZE_FOR_PROGRESS", 1024),
+            HTTPClient(show_progress=True) as client,
+            contextlib.redirect_stderr(stderr),
+        ):
+            response = client.get(f"{self.base_url}/")
+
+        self.assertEqual(response.content, COMPRESSIBLE_BODY, "the body is decoded")
+        percentages = [int(p) for p in re.findall(r"(\d+)%", stderr.getvalue())]
+        self.assertTrue(percentages, "a bar is drawn")
+        self.assertEqual(max(percentages), 100, stderr.getvalue())
 
 
 class _OversizedChunkLineHandler(_QuietHandler):
