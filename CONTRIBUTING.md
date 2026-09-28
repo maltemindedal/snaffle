@@ -57,7 +57,8 @@ uv run ty check
 uv run python -m unittest discover tests
 ```
 
-To apply formatting: `uv run ruff format .`
+To apply formatting: `uv run ruff format .` It also formats the Python code
+blocks in Markdown files, so a badly formatted example in `docs/` fails the check.
 
 ## Testing notes
 
