@@ -69,6 +69,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The lock file now resolves requests 2.34.2, tqdm 4.70.1, certifi 2026.7.22,
+  idna 3.20 and charset-normalizer 3.5.1. Two of these change behavior. requests
+  2.34 no longer collapses a leading `//` in the URL path, so
+  `http://host//a` is sent as `GET //a` where 2.33 sent `GET /a`; this fixes
+  some presigned URLs. certifi 2026.7.22 trusts 121 root certificates where
+  2026.2.25 trusted 137 (20 removed, 4 added), so a server chaining to one of
+  the removed roots no longer verifies. Installs that do not use the lock file
+  are unaffected, because the dependency floors did not move.
 - Relicensed from Apache-2.0 to MIT. The `license` field in `pyproject.toml`
   and the `LICENSE` file both carry the new terms; releases up to and including
   3.0.0 remain available under Apache-2.0.

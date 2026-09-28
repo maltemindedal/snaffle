@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import socketserver
 import threading
 import unittest
 import weakref
@@ -684,6 +685,46 @@ class TestSpeedupsExtra(_LocalServerTestCase):
 
         encodings = {token.strip() for token in offered.split(",")}
         self.assertLessEqual({"br", "zstd"}, encodings, offered)
+
+
+class _RequestLineRecorder(socketserver.StreamRequestHandler):
+    """Records the raw request line, then answers with an empty 200.
+
+    `http.server` rewrites a request target that starts with `//` before a
+    handler sees it, so only a raw socket shows what the client put on the wire.
+    """
+
+    lines: ClassVar[list[str]] = []
+
+    @override
+    def handle(self) -> None:
+        """Reads the request line and closes the exchange."""
+        self.lines.append(self.rfile.readline().decode("ascii").rstrip("\r\n"))
+        self.wfile.write(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+
+
+class TestRequestTarget(unittest.TestCase):
+    """What the client writes on the request line."""
+
+    def test_duplicate_leading_slashes_are_sent_as_written(self) -> None:
+        """Test `//a//b` reaches the server unchanged.
+
+        requests 2.34 stopped collapsing a leading `//` to `/`, which broke some
+        presigned URLs. The path is the caller's to choose, so it is sent as
+        given.
+        """
+        _RequestLineRecorder.lines.clear()
+        server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _RequestLineRecorder)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+
+        with HTTPClient(retries=1) as client:
+            client.get(f"http://127.0.0.1:{server.server_address[1]}//double//slash")
+
+        self.assertEqual(_RequestLineRecorder.lines, ["GET //double//slash HTTP/1.1"])
 
 
 class TestMalformedHosts(unittest.TestCase):
