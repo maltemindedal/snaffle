@@ -139,6 +139,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `types-requests`, from the dev dependencies. requests has shipped its own
+  inline type annotations since 2.34.0, and the stubs package, frozen at
+  requests 2.33, takes precedence over them. Its PyPI page now says to
+  uninstall it. The dev group requires `requests>=2.34.2` in its place, so a
+  resolution without the lock file cannot lose the annotations. This
+  supersedes the note under mypy below that `types-requests` stays. The
+  annotations exposed one real error in the tests, an override that returned
+  the `ConnectionPool` base class where `HTTPConnectionPool` is expected; it is
+  fixed.
 - mypy, in favour of ty (see Added). The `[tool.mypy]` configuration is gone
   from `pyproject.toml`, including the `build/` and `dist/` excludes it needed.
   ty honours `.gitignore`, so build output is skipped without configuration.

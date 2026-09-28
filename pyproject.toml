@@ -47,7 +47,10 @@ snaffle = ["py.typed"]
 dev = [
     "ruff>=0.11.5,<0.12",
     "ty>=0.0.75",
-    "types-requests>=2.33.0,<3",
+    # requests ships inline type annotations since 2.34.0, and the types-requests
+    # stubs, which are frozen at 2.33, would shadow them. The floor keeps a
+    # resolution without the lock file from silently losing the annotations.
+    "requests>=2.34.2",
     # Tests need `override` at runtime; the project floor is 3.10 and
     # `typing.override` arrived in 3.12.
     "typing-extensions>=4.6",
