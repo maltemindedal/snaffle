@@ -17,7 +17,11 @@ import requests
 from requests.adapters import HTTPAdapter
 from typing_extensions import override
 from urllib3.connectionpool import HTTPConnectionPool
-from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
+from urllib3.exceptions import (
+    ConnectTimeoutError,
+    LocationParseError,
+    ReadTimeoutError,
+)
 from urllib3.util.retry import Retry
 
 from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
@@ -754,8 +758,55 @@ class TestRequestTarget(unittest.TestCase):
         self.assertEqual(_RequestLineRecorder.lines, ["GET //double//slash HTTP/1.1"])
 
 
+class _RedirectToBadHostHandler(_QuietHandler):
+    """Redirects every GET to a host that cannot be parsed."""
+
+    def do_GET(self) -> None:
+        """Answers with a 302 whose `Location` names `a..b`."""
+        self.send_response(302)
+        self.send_header("Location", "http://a..b/")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+class TestServerChosenLocation(_LocalServerTestCase):
+    """A redirect target is chosen by the server, so its errors are the client's."""
+
+    handler = _RedirectToBadHostHandler
+
+    def test_a_redirect_to_an_unparsable_host_is_a_client_error(self) -> None:
+        """Test the failure is reported as `HTTPClientError`, not a raw urllib3 one."""
+        with (
+            HTTPClient(retries=1) as client,
+            self.assertRaises(HTTPClientError) as caught,
+        ):
+            client.get(f"{self.base_url}/")
+
+        self.assertIsInstance(caught.exception.__cause__, LocationParseError)
+
+
 class TestMalformedHosts(unittest.TestCase):
     """Hosts urllib3 refuses to parse are the caller's mistake, not an outage."""
+
+    def test_an_unparsable_host_is_a_client_error(self) -> None:
+        """Test a host urllib3 cannot encode raises `HTTPClientError`.
+
+        Regression: urllib3 raises `LocationParseError` while connecting for an
+        empty label (`a..b`) or a label over 63 characters, and it is not a
+        `requests` exception, so it left `make_request` unwrapped. The API
+        reference promises `HTTPClientError` for a malformed URL. Nothing is sent:
+        the failure comes before any lookup.
+        """
+        for host in ("a..b", "a" * 300 + ".com"):
+            with self.subTest(host=host[:20]):
+                with (
+                    HTTPClient(retries=1) as client,
+                    self.assertRaises(HTTPClientError) as caught,
+                ):
+                    client.get(f"http://{host}/")
+
+                self.assertNotIsInstance(caught.exception, HTTPConnectionError)
+                self.assertIsInstance(caught.exception.__cause__, LocationParseError)
 
     def test_a_host_with_a_space_is_a_client_error(self) -> None:
         """Test a raw space in the host is rejected before any connection attempt.
