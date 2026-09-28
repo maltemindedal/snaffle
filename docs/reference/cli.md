@@ -185,6 +185,30 @@ A non-2xx status is an error: `raise_for_status()` runs before the response is
 printed, so a `404` exits `1` and prints `Error: HTTP error occurred: ...`
 rather than rendering the response body.
 
+## Security notes
+
+Snaffle is a thin layer over `requests`, so it inherits `requests` defaults.
+Some of them surprise people who put credentials on the command line.
+
+- **Environment and `~/.netrc`.** `requests` reads `HTTP_PROXY`, `HTTPS_PROXY`,
+  `NO_PROXY`, `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` from the environment,
+  and credentials from `~/.netrc`. A `~/.netrc` entry for the host replaces an
+  `Authorization` header passed with `-H`, without a message, so the request is
+  made as the `.netrc` identity.
+- **Redirects.** Redirects are followed, to any `http` or `https` address,
+  including internal ones. When a redirect leaves the origin, `requests` drops
+  the `Authorization` header but forwards every other `-H` header, such as
+  `X-Api-Key`, to the new origin. A `Cookie` header passed with `-H` is dropped
+  on any redirect.
+- **Secrets on the command line.** Values passed with `-H` and `-d` are visible
+  in your shell history and, while the command runs, in the process list.
+- **Verbose output.** `-v` prints the request's headers and JSON body and the
+  response's headers to stdout, unredacted: `Authorization` values, request
+  bodies and `Set-Cookie` values included. Because it shares stdout with the
+  response, `snaffle GET URL -v > file` writes them to the file. Edit the output
+  before pasting it into an issue or a log. `HTTPClient(verbose=True)` behaves
+  the same way.
+
 ## What the CLI does not expose
 
 These are available only through the [Python API](python-api.md):
