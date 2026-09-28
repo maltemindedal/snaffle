@@ -54,7 +54,7 @@ def buffer_into(
 
     A bar is drawn only once the response's `Content-Length` reaches `min_size`;
     below that, or when the server sends no length at all, the body is still
-    drained without a bar. A missing length reads as `0`.
+    drained without a bar. A missing or unparsable length reads as `0`.
 
     The buffer is written back onto the response and the body marked consumed, so
     `.text` and `.json()` serve it rather than re-reading a drained socket. The
@@ -67,7 +67,10 @@ def buffer_into(
         min_size (int): Minimum `Content-Length` before a bar is drawn.
         desc (str): The description displayed alongside the bar.
     """
-    total = int(response.headers.get("content-length", 0))
+    try:
+        total = int(response.headers.get("content-length", 0))
+    except ValueError:
+        total = 0
     progress_bar = _create_progress_bar(total, min_size, desc)
 
     chunks: list[bytes] = []

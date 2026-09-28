@@ -118,6 +118,25 @@ class TestBufferInto(unittest.TestCase):
         mock_tqdm.assert_not_called()
         self.assertEqual(response._content, b"data")
 
+    def test_an_unparsable_content_length_reads_as_zero(self) -> None:
+        """Test a garbled length is treated like a missing one, not a crash.
+
+        Regression: `int()` raised a bare `ValueError` before the body was read,
+        so a response that `requests` handles fine without a progress bar failed
+        with one. `5, 5` is what urllib3 reports for a duplicated header.
+        """
+        for length in ("abc", "5, 5", "5.5", ""):
+            with self.subTest(length=length):
+                response = _unread_response(length, [b"data"])
+
+                with patch("tqdm.tqdm") as mock_tqdm:
+                    buffer_into(
+                        response, chunk_size=8, min_size=5 * MIB, desc="Downloading"
+                    )
+
+                mock_tqdm.assert_not_called()
+                self.assertEqual(response._content, b"data")
+
     def test_bar_is_closed_when_the_body_fails_midway(self) -> None:
         """Test a broken download does not leave the terminal owned by tqdm."""
         response = _unread_response(str(6 * MIB), [])
