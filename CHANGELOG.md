@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The `urllib3` floor is now 2.8.0, which fixes three advisories that a
+  hostile server could reach through any response snaffle reads:
+  `GHSA-vxq7-64xx-v4gw` (a chunk-size line of unbounded length was buffered in
+  memory; one response pushed a client's memory use up by more than 500 MiB),
+  `GHSA-gh4c-6fx4-qh6g` (chunked `deflate` streaming could loop forever) and
+  `GHSA-8988-9cw3-xx77` (the TLS settings for an HTTPS proxy could be ignored).
+  A response with an oversized chunk-size line now fails as
+  `HTTPClientError`. urllib3 2.8.0 also rejects hosts containing a raw space or
+  a control character while parsing the URL, so `http://exa mple.com/` now
+  raises `HTTPClientError` ("Request failed: ...") instead of
+  `HTTPConnectionError` after a failed DNS lookup. The exit code of the CLI is
+  `1` either way.
+
 ### Fixed
 
 - The `-d`/`--data` help text no longer prints a literal `R|` prefix:

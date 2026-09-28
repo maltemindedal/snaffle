@@ -20,7 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
-dependencies = ["requests>=2.33.1", "tqdm>=4.66.0", "urllib3>=2.7.0"]
+dependencies = ["requests>=2.33.1", "tqdm>=4.66.0", "urllib3>=2.8.0"]
 
 [project.optional-dependencies]
 # urllib3 negotiates these content encodings automatically once the codecs are
