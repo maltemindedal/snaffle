@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import importlib.util
 import io
+import os
 import socketserver
 import threading
 import unittest
@@ -31,6 +32,22 @@ SESSION_REQUEST = "requests.Session.request"
 #: Patched where it is used, not where it is defined: `http_client` imports the
 #: name. What it does with a body is `tests/test_download.py`'s business.
 BUFFER_INTO = "snaffle.http_client.buffer_into"
+
+
+def setUpModule() -> None:
+    """Keeps the machine's proxy settings out of these tests.
+
+    `requests` reads `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` from the
+    environment. On a machine that sets them, the loopback requests here, and
+    even urllib3's URL errors, would go through the proxy and fail for reasons
+    that say nothing about the code.
+    """
+    saved = patch.dict(os.environ)
+    saved.start()
+    unittest.addModuleCleanup(saved.stop)
+    for name in ("http_proxy", "https_proxy", "all_proxy"):
+        os.environ.pop(name, None)
+        os.environ.pop(name.upper(), None)
 
 
 def _adapter_of(client: HTTPClient, url: str = "http://x") -> Any:
