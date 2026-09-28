@@ -104,6 +104,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `HTTPClient.__enter__` is annotated as returning the type of the client it was
+  called on, not always `HTTPClient`. `with PatientClient() as client:`, the
+  subclassing pattern the library guide documents, now type-checks as
+  `PatientClient`, so a method the subclass adds is no longer reported as
+  missing. Annotation only; there is no change at run time.
 - The lock file now resolves requests 2.34.2, tqdm 4.70.1, certifi 2026.7.22,
   idna 3.20 and charset-normalizer 3.5.1. Two of these change behavior. requests
   2.34 no longer collapses a leading `//` in the URL path, so
