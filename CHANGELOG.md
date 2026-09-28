@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A JSON response nested too deeply for the parser no longer kills the CLI with
+  a `RecursionError` traceback. The nesting exhausts Python's recursion limit,
+  which is not a `ValueError`, so the plain-text fallback never ran and nothing
+  was printed, not even the status or headers. The body is now printed as text,
+  like any other body that is not valid JSON. A server chooses the body, so this
+  was remotely triggerable.
 - A response whose `Content-Length` is not an integer, such as `abc` or a
   duplicated header that urllib3 joins into `5, 5`, no longer makes a download
   with `show_progress` fail. The progress path called `int()` on the header and
