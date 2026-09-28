@@ -232,7 +232,16 @@ class HTTPClient:
             response = self.session.request(
                 method=normalized_method, url=url, timeout=self.timeout, **kwargs
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError:
+                if buffer_body:
+                    # This request asked for `stream=True`, so the error body is
+                    # still on the socket. Read it, as a non-streamed request
+                    # would have, so the connection returns to the pool and the
+                    # exception's response keeps a readable `.text`.
+                    _ = response.content
+                raise
 
             if verbose:
                 print(

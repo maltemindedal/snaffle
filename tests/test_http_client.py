@@ -572,6 +572,27 @@ class TestRetryAgainstRealServer(_LocalServerTestCase):
         self.assertEqual(len(self.hits), 4)
         self.assertEqual(len(self.peers), 1, "one TCP connection, reused")
 
+    def test_a_streamed_error_response_releases_its_connection(self) -> None:
+        """Test a failing GET with a progress bar still returns its connection.
+
+        Regression: `show_progress` sends a GET as `stream=True`, and a 4xx or
+        5xx was raised without reading its body. The connection then stayed
+        checked out until the exception was collected, so every failure opened
+        a new socket, and `close()` could not release them. The errors are kept
+        alive here on purpose, the way a batch script that collects them would.
+        """
+        errors: list[ResponseError] = []
+        with HTTPClient(show_progress=True, retries=1) as client:
+            for _ in range(3):
+                with self.assertRaises(ResponseError) as caught:
+                    client.get(f"{self.base_url}/missing")
+                errors.append(caught.exception)
+
+        self.assertEqual(len(self.peers), 1, "one TCP connection, reused")
+        for error in errors:
+            response = cast(Any, error.__cause__).response
+            self.assertEqual(response.text, "{}", "the error body stays readable")
+
 
 #: Deliberately over `MIN_SIZE_FOR_PROGRESS`, so the progress path is fully live.
 LARGE_BODY = b"snaffle!" * (6 * 1024 * 1024 // 8)
