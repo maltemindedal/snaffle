@@ -173,6 +173,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A "Security notes" section in the CLI reference, documenting behaviors that
+  come from `requests` and that surprise people who put credentials on the
+  command line: a `~/.netrc` entry overrides `-H "Authorization: ..."`, redirects
+  drop `Authorization` but forward other custom headers to a new origin, secrets
+  on the command line are visible in history and the process list, and `-v`
+  prints credentials unredacted. Each was checked against the locked `requests`.
 - ty as the project's type checker, with every rule at error level
   (`[tool.ty.rules] all = "error"`). It replaces mypy, whose `strict = true`
   configuration was the equivalent bar. Satisfying it added `@override`
