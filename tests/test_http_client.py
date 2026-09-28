@@ -518,10 +518,13 @@ class _CountingHandler(_QuietHandler):
     """Answers `/flaky` with a 503 and everything else with a 404, counting hits."""
 
     hits: ClassVar[list[str]] = []
+    #: One entry per TCP connection that reached the server, by client port.
+    peers: ClassVar[set[tuple[str, int]]] = set()
 
     def _reply(self) -> None:
         """Records the request and answers it without ever succeeding."""
         self.hits.append(f"{self.command} {self.path}")
+        self.peers.add(self.client_address)
         self.send_body(503 if self.path == "/flaky" else 404, b"{}")
 
     do_GET = _reply
@@ -533,10 +536,12 @@ class TestRetryAgainstRealServer(_LocalServerTestCase):
 
     handler = _CountingHandler
     hits: ClassVar[list[str]] = _CountingHandler.hits
+    peers: ClassVar[set[tuple[str, int]]] = _CountingHandler.peers
 
     @override
     def setUp(self) -> None:
         self.hits.clear()
+        self.peers.clear()
 
     def test_get_on_503_is_retried(self) -> None:
         """Test a transient status really is re-sent for an idempotent method."""
@@ -565,6 +570,7 @@ class TestRetryAgainstRealServer(_LocalServerTestCase):
                     client.get(f"{self.base_url}/missing")
             self.assertIs(client.session.get_adapter(self.base_url), pool)
         self.assertEqual(len(self.hits), 4)
+        self.assertEqual(len(self.peers), 1, "one TCP connection, reused")
 
 
 #: Deliberately over `MIN_SIZE_FOR_PROGRESS`, so the progress path is fully live.
