@@ -24,8 +24,11 @@ dependencies = ["requests>=2.33.1", "tqdm>=4.66.0", "urllib3>=2.8.0"]
 
 [project.optional-dependencies]
 # urllib3 negotiates these content encodings automatically once the codecs are
-# installed, so large text/JSON responses arrive materially smaller.
-speedups = ["zstandard>=0.23", "brotli>=1.1"]
+# installed, so large text/JSON responses arrive materially smaller. These are
+# the packages urllib3 itself loads: brotli older than 1.2.0 cannot bound
+# decompression, and Python 3.14 has zstd in the standard library, so
+# backports-zstd is only needed before it.
+speedups = ["brotli>=1.2.0", "backports-zstd>=1.0.0; python_version < '3.14'"]
 
 [project.scripts]
 # Points at `run`, not `cli:main`, so the console script gets the same

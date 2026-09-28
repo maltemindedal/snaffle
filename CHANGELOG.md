@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The `speedups` extra now installs the codecs urllib3 actually loads. It named
+  `zstandard`, which urllib3 stopped using in 2.6.0, so on Python 3.10 to 3.13
+  the documented Zstandard negotiation never happened even with the extra
+  installed. The extra is now `brotli>=1.2.0` plus `backports-zstd>=1.0.0` on
+  Python before 3.14, where Zstandard is in the standard library. The floor for
+  `brotli` moves from 1.1 to 1.2.0 because older releases cannot bound
+  decompression (`GHSA-2qfp-q593-8484`, a decompression bomb). Anyone who
+  installed the extra and imported `zstandard` for their own use must now
+  depend on it directly.
 - The `-d`/`--data` help text no longer prints a literal `R|` prefix:
   `-d, --data DATA  R|JSON data for request body.` The marker belonged to a
   custom help formatter that was only ever attached to the top-level parser,

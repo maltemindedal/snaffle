@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import importlib.util
 import io
 import threading
 import unittest
@@ -652,6 +653,37 @@ class TestHostileResponses(_LocalServerTestCase):
             client.get(f"{self.base_url}/")
 
         self.assertIn("chunk size line", str(caught.exception))
+
+
+class _EchoAcceptEncodingHandler(_QuietHandler):
+    """Answers with the `Accept-Encoding` header the request carried."""
+
+    def do_GET(self) -> None:
+        """Sends the header's value back as the body."""
+        self.send_body(200, self.headers.get("Accept-Encoding", "").encode())
+
+
+@unittest.skipUnless(
+    importlib.util.find_spec("brotli") is not None,
+    "the speedups extra is not installed",
+)
+class TestSpeedupsExtra(_LocalServerTestCase):
+    """The `speedups` extra must switch on every encoding it promises."""
+
+    handler = _EchoAcceptEncodingHandler
+
+    def test_the_extra_negotiates_brotli_and_zstd(self) -> None:
+        """Test a client with the extra installed asks for `br` and `zstd`.
+
+        Regression: the extra once named `zstandard`, which urllib3 stopped
+        loading in 2.6.0, so zstd was silently never negotiated before
+        Python 3.14. Only a request on the wire shows what the client offers.
+        """
+        with HTTPClient(retries=1) as client:
+            offered = client.get(f"{self.base_url}/").text
+
+        encodings = {token.strip() for token in offered.split(",")}
+        self.assertLessEqual({"br", "zstd"}, encodings, offered)
 
 
 class TestMalformedHosts(unittest.TestCase):

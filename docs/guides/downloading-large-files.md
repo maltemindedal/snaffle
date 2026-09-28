@@ -104,7 +104,8 @@ immediately. See
 
 ## Make large text responses smaller
 
-The optional `speedups` extra installs `zstandard` and `brotli`. urllib3
+The optional `speedups` extra installs `brotli` and, before Python 3.14,
+`backports-zstd` (Python 3.14 ships Zstandard in the standard library). urllib3
 negotiates those content encodings automatically once the codecs are present,
 so large text and JSON responses arrive compressed:
 
