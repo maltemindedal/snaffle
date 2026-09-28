@@ -171,11 +171,13 @@ Response Body:
 | Code | Meaning |
 | --- | --- |
 | `0` | Request succeeded, help was printed, or the user pressed `Ctrl+C`. |
-| `1` | Invalid JSON body, malformed `-H` header, an argument value the client rejects (`-t 0`, since the timeout must be greater than zero), or any `HTTPClientError`, including a connection failure, non-2xx status, or timeout. |
+| `1` | Invalid JSON body, malformed `-H` header, an argument value the client rejects (`-t 0`, since the timeout must be greater than zero), or any `HTTPClientError`, including a connection failure, non-2xx status, or timeout. Also output that cannot be written because the reader closed the pipe early, as with `head -1`, which prints nothing to stderr. |
 | `2` | argparse rejected the command line (unknown command, missing URL, a non-integer `-t`, `--progress` on a non-`GET`). |
 
 `0` and `1` are returned by `snaffle.cli.main`, which is where the whole mapping
-is decided; `snaffle.__main__.run` passes that return value to `sys.exit`. `2`
+is decided; `snaffle.__main__.run` passes that return value to `sys.exit`. The
+one `1` that `main` does not return is the closed pipe: `run` catches the
+`BrokenPipeError`. `2`
 never passes through `main` because argparse exits from inside `parse_args`,
 before there is a return value to produce.
 
