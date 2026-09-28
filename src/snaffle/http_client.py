@@ -12,6 +12,7 @@ from typing import Any, Protocol
 
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.exceptions import LocationValueError
 from urllib3.util.retry import Retry
 
 from snaffle._download import buffer_into, should_buffer
@@ -269,7 +270,10 @@ class HTTPClient:
             if verbose:
                 print(f"[VERBOSE] ConnectionError: {e}")
             raise HTTPConnectionError(f"Failed to connect to {url}: {e!s}") from e
-        except requests.exceptions.RequestException as e:
+        except (requests.exceptions.RequestException, LocationValueError) as e:
+            # urllib3 raises `LocationValueError` for a host it cannot encode, and
+            # `requests` does not wrap it when the host comes from a redirect or
+            # only fails once the connection is being made.
             if verbose:
                 print(f"[VERBOSE] RequestException: {e}")
             raise HTTPClientError(f"Request failed: {e!s}") from e

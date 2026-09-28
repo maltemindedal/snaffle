@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A host that urllib3 cannot encode, such as `http://a..b/` (an empty label) or
+  one with a label over 63 characters, no longer escapes `make_request` as a raw
+  `urllib3.exceptions.LocationParseError`. It raises `HTTPClientError`, as the
+  API reference already said a malformed URL does. The same held for a server
+  that redirects to such a host. The CLI still exits `1`; its message gains the
+  usual prefix, `Error: Request failed: Failed to parse: ...`. Code that caught
+  `ValueError` around a call to catch this case must catch `HTTPClientError`.
 - A `GET` with `show_progress` on that came back as a 4xx or 5xx no longer
   leaves its connection checked out. The request is sent as `stream=True`, and
   the error was raised without reading the body, so the socket stayed open until
