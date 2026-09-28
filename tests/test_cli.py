@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 import subprocess
 import sys
 import unittest
@@ -181,7 +182,10 @@ class TestCLI(unittest.TestCase):
         """Test help output names the command, not whatever launched it."""
         from snaffle.cli import create_parser
 
-        self.assertTrue(create_parser().format_usage().startswith("usage: snaffle"))
+        # Python 3.14 styles argparse output on a colour terminal, which puts an
+        # escape code in front of "usage:". Only the text is under test.
+        usage = re.sub(r"\x1b\[[0-9;]*m", "", create_parser().format_usage())
+        self.assertTrue(usage.startswith("usage: snaffle"), usage)
 
     def test_help_path_does_not_import_requests(self) -> None:
         """Guard the start-up win: help must not drag in the HTTP stack."""
