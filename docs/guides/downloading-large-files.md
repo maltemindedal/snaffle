@@ -102,9 +102,11 @@ reading it is what you asked to do yourself. See
 [Combine your own progress bar with streaming](#combine-your-own-progress-bar-with-streaming)
 for having both.
 
-Without `show_progress`, `GET` does not stream at all: letting `requests` read
-the body in one pass is faster and returns the connection to the pool
-immediately. See
+Without `show_progress`, `GET` does not stream at all: `requests` reads the body
+in one pass and returns the connection to the pool immediately, and no response
+is left streaming with nothing reading it. That read is not the faster one for
+large bodies. `requests` reads in 10 KiB chunks, so draining in
+`DOWNLOAD_CHUNK_SIZE` chunks is quicker from about 100 KiB up. See
 [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
 
 ## Make large text responses smaller
