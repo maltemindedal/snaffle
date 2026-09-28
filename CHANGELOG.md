@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raises `HTTPClientError` ("Request failed: ...") instead of
   `HTTPConnectionError` after a failed DNS lookup. The exit code of the CLI is
   `1` either way.
+- The `tqdm` floor is now 4.66.3. 4.66.0 to 4.66.2 are affected by
+  `GHSA-g7vv-2v7x-gj9p` (`CVE-2024-34062`, low severity, argument injection in
+  the `python -m tqdm` command line). snaffle only calls the `tqdm()` API, so it
+  was not reachable, but a floor should not admit a version with a published
+  advisory.
 
 ### Fixed
 
