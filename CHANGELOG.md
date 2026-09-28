@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The large-download guide claimed that letting `requests` read a `GET` body in
+  one pass is faster than draining it. It is not, for bodies of about 100 KiB
+  and up: `requests` reads in 10 KiB chunks where the progress path reads
+  `DOWNLOAD_CHUNK_SIZE` (64 KiB), and against a local server the plain read
+  measured 13% slower at 100 KiB, 56% at 1 MiB and 64% at 10 MiB. The default
+  is unchanged; the guide now gives the reason that does hold, which is that no
+  response is left streaming with nothing reading it.
 - The progress bar no longer runs past 100% for a compressed download. Its total
   is the `Content-Length`, which counts the bytes the server sent, but it was
   advanced by the length of each decoded chunk, so a gzip, deflate, Brotli or
