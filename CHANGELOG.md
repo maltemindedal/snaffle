@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The progress bar no longer runs past 100% for a compressed download. Its total
+  is the `Content-Length`, which counts the bytes the server sent, but it was
+  advanced by the length of each decoded chunk, so a gzip, deflate, Brotli or
+  Zstandard response of 5 MiB or more finished at several hundred percent and
+  tqdm dropped the total. It now advances by the bytes read off the wire
+  (`response.raw.tell()`), and falls back to the decoded length for a transport
+  that cannot report a position. The recipe for driving your own bar in the
+  large-download guide had the same flaw and is corrected. The bar is on stderr;
+  stdout is unchanged.
 - Piping the CLI into a reader that exits early, as in `snaffle GET URL | head -1`,
   no longer prints a `BrokenPipeError` traceback. A large body raised one
   (exit status `1`); a small body, still buffered when the CLI finished, failed

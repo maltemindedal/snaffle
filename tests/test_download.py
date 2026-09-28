@@ -21,6 +21,35 @@ def _unread_response(content_length: str | None, chunks: list[bytes]) -> Any:
         {} if content_length is None else {"content-length": content_length}
     )
     response.iter_content.return_value = chunks
+    # No usable position on the raw stream, so the bar counts decoded chunks.
+    response.raw = None
+    return response
+
+
+def _wire_response(
+    steps: list[tuple[bytes, int]], length: int, wire_after_body: int | None = None
+) -> Any:
+    """Builds an unread response whose `raw.tell()` follows the wire, not the chunks.
+
+    Each step is a decoded chunk and the position on the wire once it was read, so
+    a compressed body is short on the wire and long once decoded.
+    `wire_after_body` moves the position again after the last chunk, the way a
+    trailer read at the end of the stream does.
+    """
+    position = 0
+
+    def body() -> Any:
+        nonlocal position
+        for chunk, wire in steps:
+            position = wire
+            yield chunk
+        if wire_after_body is not None:
+            position = wire_after_body
+
+    response = MagicMock()
+    response.headers = {"content-length": str(length)}
+    response.iter_content.return_value = body()
+    response.raw.tell.side_effect = lambda: position
     return response
 
 
@@ -136,6 +165,53 @@ class TestBufferInto(unittest.TestCase):
 
                 mock_tqdm.assert_not_called()
                 self.assertEqual(response._content, b"data")
+
+    def test_the_bar_advances_by_bytes_read_off_the_wire(self) -> None:
+        """Test a compressed body moves the bar by what was sent, not what it decodes to.
+
+        Regression: the total is the `Content-Length`, which counts compressed
+        bytes, but the bar was advanced by decoded chunks, so it ran past 100%.
+        """
+        response = _wire_response(
+            [(b"x" * 1000, 10), (b"y" * 1000, 20)], length=6 * MIB
+        )
+
+        with patch("tqdm.tqdm") as mock_tqdm:
+            buffer_into(response, chunk_size=8, min_size=5 * MIB, desc="Downloading")
+
+        self.assertEqual(
+            mock_tqdm.return_value.update.call_args_list, [call(10), call(10)]
+        )
+        self.assertEqual(len(response._content), 2000, "the buffer is still decoded")
+
+    def test_bytes_read_after_the_last_chunk_still_reach_the_bar(self) -> None:
+        """Test the bar is completed by bytes read once the stream has ended."""
+        response = _wire_response(
+            [(b"x" * 1000, 8)], length=6 * MIB, wire_after_body=10
+        )
+
+        with patch("tqdm.tqdm") as mock_tqdm:
+            buffer_into(response, chunk_size=8, min_size=5 * MIB, desc="Downloading")
+
+        self.assertEqual(
+            mock_tqdm.return_value.update.call_args_list, [call(8), call(2)]
+        )
+
+    def test_a_raw_stream_that_cannot_report_a_position_is_counted_decoded(
+        self,
+    ) -> None:
+        """Test a stand-in transport without a usable `tell()` still gets a bar."""
+        response = _unread_response(str(6 * MIB), [b"ab", b"cd"])
+        response.raw = MagicMock()
+        response.raw.tell.side_effect = OSError("not seekable")
+
+        with patch("tqdm.tqdm") as mock_tqdm:
+            buffer_into(response, chunk_size=8, min_size=5 * MIB, desc="Downloading")
+
+        self.assertEqual(
+            mock_tqdm.return_value.update.call_args_list, [call(2), call(2)]
+        )
+        self.assertEqual(response._content, b"abcd")
 
     def test_bar_is_closed_when_the_body_fails_midway(self) -> None:
         """Test a broken download does not leave the terminal owned by tqdm."""

@@ -13,7 +13,7 @@ undo the start-up win recorded in ADR 0002. `tests/test_init.py` guards that.
 from __future__ import annotations
 
 import io
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import requests
@@ -57,6 +57,11 @@ def buffer_into(
     below that, or when the server sends no length at all, the body is still
     drained without a bar. A missing or unparsable length reads as `0`.
 
+    The bar counts bytes as they crossed the wire, which is what `Content-Length`
+    counts, so a gzip or Brotli body finishes at 100% rather than running past
+    it. urllib3 reports that through `raw.tell()`; a `raw` that cannot report a
+    position is counted by the length of the decoded chunks instead.
+
     The buffer is written back onto the response and the body marked consumed, so
     `.text` and `.json()` serve it rather than re-reading a drained socket. The
     result is indistinguishable from a response `requests` read in one pass; the
@@ -77,6 +82,8 @@ def buffer_into(
     buffer = io.BytesIO()
     write = buffer.write
     update = progress_bar.update if progress_bar is not None else None
+    tell = _wire_position_reader(response)
+    reported = 0
 
     try:
         for chunk in response.iter_content(chunk_size=chunk_size):
@@ -85,7 +92,13 @@ def buffer_into(
 
             write(chunk)
             if update is not None:
-                update(len(chunk))
+                position = tell() if tell is not None else reported + len(chunk)
+                update(position - reported)
+                reported = position
+
+        # A decoder can hold bytes back until the stream ends.
+        if update is not None and tell is not None and tell() > reported:
+            update(tell() - reported)
     finally:
         if progress_bar is not None:
             progress_bar.close()
@@ -96,6 +109,29 @@ def buffer_into(
     # Mark the body as fully read so `.text`/`.json()` serve the buffer we just
     # built instead of re-reading a drained socket.
     response._content_consumed = True
+
+
+def _wire_position_reader(response: requests.Response) -> Callable[[], int] | None:
+    """Returns a function reporting how many body bytes have been read off the wire.
+
+    urllib3's response counts them in `tell()`, before any decompression. Anything
+    else, such as the stand-in a test adapter provides, may not have the method or
+    may not support it, and then the caller falls back to counting decoded bytes.
+
+    Args:
+        response (requests.Response): The response being drained.
+
+    Returns:
+        Callable[[], int] or None: The reader, or None when `raw` cannot report.
+    """
+    tell = getattr(response.raw, "tell", None)
+    if not callable(tell):
+        return None
+    try:
+        tell()
+    except (OSError, ValueError):
+        return None
+    return cast("Callable[[], int]", tell)
 
 
 def _create_progress_bar(total: int, min_size: int, desc: str) -> ProgressBar | None:
