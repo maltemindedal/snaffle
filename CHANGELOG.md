@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A response whose `Content-Length` is not an integer, such as `abc` or a
+  duplicated header that urllib3 joins into `5, 5`, no longer makes a download
+  with `show_progress` fail. The progress path called `int()` on the header and
+  raised a bare `ValueError` before reading the body, although the same response
+  reads fine without `show_progress`. An unparsable length now reads as `0`, the
+  same as a missing one: the body is drained and no bar is drawn.
 - A host that urllib3 cannot encode, such as `http://a..b/` (an empty label) or
   one with a label over 63 characters, no longer escapes `make_request` as a raw
   `urllib3.exceptions.LocationParseError`. It raises `HTTPClientError`, as the
