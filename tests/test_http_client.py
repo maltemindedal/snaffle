@@ -258,6 +258,28 @@ class TestHTTPClient(unittest.TestCase):
             HTTPClient(retries=0)
 
 
+class _PatientClient(HTTPClient):
+    """The subclassing pattern `docs/guides/using-as-a-library.md` documents."""
+
+    def patience(self) -> str:
+        """A method only the subclass has."""
+        return "patient"
+
+
+class TestSubclassing(unittest.TestCase):
+    """What a subclass can rely on."""
+
+    def test_a_with_block_keeps_the_subclass_type(self) -> None:
+        """Test `with Sub() as client` is typed as `Sub`, not as `HTTPClient`.
+
+        The assertion here is the type checker's: `ty check` runs over the
+        tests, and it rejects `client.patience()` if `__enter__` is annotated as
+        returning the base class. At run time the test passes either way.
+        """
+        with _PatientClient() as client:
+            self.assertEqual(client.patience(), "patient")
+
+
 class TestSessionReuse(unittest.TestCase):
     """Test cases covering connection pooling and lifecycle."""
 

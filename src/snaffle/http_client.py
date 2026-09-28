@@ -8,7 +8,7 @@ of paying for a fresh handshake each time.
 from __future__ import annotations
 
 from types import TracebackType
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -19,6 +19,10 @@ from snaffle._download import buffer_into, should_buffer
 from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 
 __all__ = ["HTTPClient", "ProgressBar"]
+
+#: Lets `__enter__` return the type of a subclass. `typing.Self` needs Python 3.11
+#: and this package supports 3.10.
+_ClientT = TypeVar("_ClientT", bound="HTTPClient")
 
 
 class ProgressBar(Protocol):
@@ -165,7 +169,7 @@ class HTTPClient:
         if self._owns_session:
             self.session.close()
 
-    def __enter__(self) -> HTTPClient:
+    def __enter__(self: _ClientT) -> _ClientT:
         """Returns the client itself, for use as a context manager."""
         return self
 
