@@ -408,20 +408,31 @@ class TestVerboseErrorsOnATerminal(unittest.TestCase):
     """The exception text `verbose` prints can come from the server."""
 
     def test_a_server_chosen_error_cannot_drive_a_terminal(self) -> None:
-        """Test control characters in a failure are escaped on the verbose lines."""
-        hostile = requests.exceptions.HTTPError("500 Server Error: \x1b]0;pwned\x07")
-        terminal = _Terminal()
+        """Test control characters in a failure are escaped on every verbose line.
 
-        with (
-            patch(SESSION_REQUEST, side_effect=hostile),
-            patch("sys.stdout", new=terminal),
-            HTTPClient(verbose=True) as client,
-            self.assertRaises(ResponseError),
-        ):
-            client.get("http://example.test/")
+        `make_request` prints one line for each of three kinds of failure, and a
+        line that lost its escaping would not show in the others.
+        """
+        cases = (
+            (requests.exceptions.HTTPError, ResponseError),
+            (requests.exceptions.ConnectionError, HTTPConnectionError),
+            (requests.exceptions.RequestException, HTTPClientError),
+        )
+        for cause, raised in cases:
+            with self.subTest(cause=cause.__name__):
+                hostile = cause("failure: \x1b]0;pwned\x07")
+                terminal = _Terminal()
 
-        self.assertNotIn("\x1b", terminal.getvalue())
-        self.assertIn("\\x1b]0;pwned\\x07", terminal.getvalue())
+                with (
+                    patch(SESSION_REQUEST, side_effect=hostile),
+                    patch("sys.stdout", new=terminal),
+                    HTTPClient(verbose=True) as client,
+                    self.assertRaises(raised),
+                ):
+                    client.get("http://example.test/")
+
+                self.assertNotIn("\x1b", terminal.getvalue())
+                self.assertIn("\\x1b]0;pwned\\x07", terminal.getvalue())
 
 
 class TestSessionReuse(unittest.TestCase):

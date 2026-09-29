@@ -27,7 +27,10 @@ class TestRun(unittest.TestCase):
         """Test the entry point calls the CLI and exits with the code it returns."""
         mock_main.return_value = 0
 
-        with self.assertRaises(SystemExit) as caught:
+        with (
+            patch("sys.stdout", new=io.StringIO()),
+            self.assertRaises(SystemExit) as caught,
+        ):
             run()
 
         mock_main.assert_called_once_with()
@@ -38,7 +41,10 @@ class TestRun(unittest.TestCase):
         """Test a non-zero code from the CLI reaches the process exit status."""
         mock_main.return_value = 1
 
-        with self.assertRaises(SystemExit) as caught:
+        with (
+            patch("sys.stdout", new=io.StringIO()),
+            self.assertRaises(SystemExit) as caught,
+        ):
             run()
 
         self.assertEqual(caught.exception.code, 1)
@@ -62,7 +68,7 @@ class TestRun(unittest.TestCase):
     @patch(CLI_MAIN, side_effect=ValueError("boom"))
     def test_other_exceptions_are_not_swallowed(self, _: MagicMock) -> None:
         """Test only KeyboardInterrupt is special-cased."""
-        with self.assertRaises(ValueError):
+        with patch("sys.stdout", new=io.StringIO()), self.assertRaises(ValueError):
             run()
 
 
@@ -136,6 +142,25 @@ class TestUnusualStdout(unittest.TestCase):
 
             self.assertEqual(caught.exception.code, 0)
 
+    @patch(CLI_MAIN, return_value=0)
+    def test_a_stdout_that_refuses_to_be_reconfigured_is_fine(
+        self, _: MagicMock
+    ) -> None:
+        """Test `reconfigure` failing with `OSError` or `ValueError` is not fatal.
+
+        The escaping is a courtesy for output that could not be encoded; a stream
+        that will not take it must not stop the command from running.
+        """
+        for error in (OSError("bad descriptor"), ValueError("closed file")):
+            with (
+                self.subTest(error=type(error).__name__),
+                patch("sys.stdout", new=_Stubborn(error)),
+                self.assertRaises(SystemExit) as caught,
+            ):
+                run()
+
+            self.assertEqual(caught.exception.code, 0)
+
     @patch(CLI_MAIN, side_effect=BrokenPipeError)
     def test_a_broken_pipe_on_a_stream_without_a_descriptor_exits_one(
         self, _: MagicMock
@@ -163,6 +188,22 @@ class TestUnusualStdout(unittest.TestCase):
 
 
 _PROXY_VARIABLES = frozenset({"http_proxy", "https_proxy", "all_proxy"})
+
+
+class _Stubborn:
+    """A stdout on the default error handler that will not be reconfigured."""
+
+    errors = "strict"
+
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    def reconfigure(self, **_kwargs: Any) -> None:
+        """Refuses, as a stream does that is closed or has no buffer to swap."""
+        raise self._error
+
+    def flush(self) -> None:
+        """Has nothing to flush."""
 
 
 class _Utf8Handler(BaseHTTPRequestHandler):

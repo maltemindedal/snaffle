@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import tracemalloc
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from typing_extensions import override
 
@@ -104,6 +104,18 @@ class TestForStdout(unittest.TestCase):
 
         with patch("sys.stdout", new=_Terminal()):
             self.assertEqual(for_stdout(text), text)
+
+    def test_a_stdout_that_cannot_say_what_it_is_is_left_alone(self) -> None:
+        """Test `isatty` failing with either error it can raise means "no".
+
+        A stdout closed under the process raises `ValueError`, and one whose
+        descriptor has gone bad raises `OSError`. Neither may reach the caller.
+        """
+        for error in (OSError("bad descriptor"), ValueError("closed file")):
+            stdout = MagicMock()
+            stdout.isatty.side_effect = error
+            with self.subTest(error=type(error).__name__), patch("sys.stdout", stdout):
+                self.assertEqual(for_stdout("a\x1bb"), "a\x1bb")
 
     def test_nothing_changes_when_stdout_is_not_a_terminal(self) -> None:
         """Test piped and redirected output stays byte for byte what it was."""
