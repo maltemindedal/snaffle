@@ -184,10 +184,12 @@ class _Utf8Handler(BaseHTTPRequestHandler):
 class TestStdoutEncoding(unittest.TestCase):
     """The response must survive a stdout that cannot encode all of it."""
 
-    def _snaffle(self, *args: str) -> subprocess.CompletedProcess[str]:
-        """Runs the real entry point with an ASCII-only stdout."""
+    def _snaffle(
+        self, *args: str, encoding: str = "ascii"
+    ) -> subprocess.CompletedProcess[str]:
+        """Runs the real entry point with a stdout of the given encoding."""
         env = {k: v for k, v in os.environ.items() if k != "PYTHONUTF8"}
-        env["PYTHONIOENCODING"] = "ascii"
+        env["PYTHONIOENCODING"] = encoding
         return subprocess.run(
             [sys.executable, "-m", "snaffle", *args],
             capture_output=True,
@@ -213,6 +215,32 @@ class TestStdoutEncoding(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Status Code: 200", result.stdout)
         self.assertIn("caf\\xe9 \\u2192 \\u65e5\\u672c", result.stdout)
+
+    def test_an_error_handler_the_user_chose_is_kept(self) -> None:
+        """Test `PYTHONIOENCODING=ascii:<handler>` still does what it says.
+
+        Only the default, `strict`, fails on such a character, so only that is
+        replaced. `replace`, `ignore` and the rest never failed, and someone who
+        asked for them gets them: escaping over them changed output that had
+        been working.
+        """
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _Utf8Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        url = f"http://127.0.0.1:{server.server_address[1]}/"
+
+        for handler, shown in (
+            ("replace", "caf? ? ??"),
+            ("ignore", "caf  \n"),
+            ("xmlcharrefreplace", "caf&#233; &#8594; &#26085;&#26412;"),
+        ):
+            with self.subTest(handler=handler):
+                result = self._snaffle("GET", url, encoding=f"ascii:{handler}")
+
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn(shown, result.stdout)
+                self.assertNotIn("\\x", result.stdout)
 
     def test_an_error_naming_a_non_ascii_url_still_prints(self) -> None:
         """Test the `Error:` line survives a URL stdout cannot encode."""
