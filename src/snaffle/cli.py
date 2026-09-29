@@ -122,36 +122,46 @@ def _parse_request_kwargs(args: argparse.Namespace) -> RequestKwargs:
     return kwargs
 
 
-# Deeper JSON is printed as received. `json.dumps(indent=4)` writes four spaces
-# per level on every line, so its output grows with the square of the depth.
-# Python 3.13 and 3.14 parse documents far deeper than this, and a 40 KB body
-# nested 20,000 levels would need gigabytes to print. Python 3.10 to 3.12 refuse
-# to parse or print much past this depth already.
-MAX_PRETTY_DEPTH = 1000
+# `json.dumps(indent=4)` starts every line with four spaces per level of depth,
+# so the indentation of a deeply nested body grows with the square of the depth
+# and, for a wide one, with its width as well. A server chooses the body, and a
+# 200 KB one can need 400 MB to print. JSON whose indentation would exceed both
+# this floor and this multiple of the body is printed as received. Real
+# documents stay far below it: GeoJSON, which nests deeply, indents to about six
+# times its size.
+_INDENT_FLOOR = 8 * 1024 * 1024
+_INDENT_RATIO = 64
 
 
-def _nests_too_deeply(value: Any) -> bool:
-    """Reports whether `value` is nested more than `MAX_PRETTY_DEPTH` levels."""
+def _indent_exceeds(value: Any, budget: int) -> bool:
+    """Reports whether indenting `value` would write more than `budget` spaces.
+
+    Counts one indent per line, level by level, without building any of them.
+    """
+    spaces = 0
+    depth = 0
     level = [value] if isinstance(value, (list, dict)) else []
-    for _ in range(MAX_PRETTY_DEPTH):
+    while level:
+        depth += 1
+        spaces += 4 * depth * sum(map(len, level))
+        if spaces > budget:
+            return True
         level = [
             child
             for node in level
             for child in (node.values() if isinstance(node, dict) else node)
             if isinstance(child, (list, dict))
         ]
-        if not level:
-            return False
-    return True
+    return False
 
 
 def _pretty(text: str) -> str:
-    """Returns `text` indented if it is JSON of sane depth, else unchanged."""
+    """Returns `text` indented if it is JSON of sane size, else unchanged."""
     # A body nested deeply enough to exhaust the parser raises `RecursionError`,
     # which is not a `ValueError`.
     with contextlib.suppress(ValueError, RecursionError):
         value = json.loads(text)
-        if not _nests_too_deeply(value):
+        if not _indent_exceeds(value, max(_INDENT_FLOOR, _INDENT_RATIO * len(text))):
             return json.dumps(value, indent=4)
     return text
 

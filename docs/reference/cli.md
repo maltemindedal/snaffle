@@ -148,9 +148,11 @@ options:
 
 A successful request writes the status line, every response header, and the
 body. A JSON body is pretty-printed with 4-space indentation; other bodies are
-printed verbatim, and so is JSON nested more than 1,000 levels deep, because
-indenting each level makes the output grow with the square of the depth. An empty
-or whitespace-only body omits the `Response Body:`
+printed verbatim, and so is JSON whose indentation alone would exceed both 8 MiB
+and 64 times the size of the body, because every line starts with four spaces
+per level of depth and a deeply nested body can need thousands of times its own
+size to print. Ordinary JSON never gets near that. An empty or whitespace-only
+body omits the `Response Body:`
 section. The whole response is assembled in memory and written to stdout in one
 call. A character that the encoding of stdout cannot represent, such as `→` when
 output is redirected on a system whose encoding is cp1252 or ASCII, is written as
