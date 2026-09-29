@@ -56,7 +56,7 @@ Applied by `add_common_arguments` to all seven method subcommands.
 | `url` (positional) | string | required | Target URL. |
 | `-t`, `--timeout` | int | `30` | Request timeout in seconds. Passed to `requests` as the `timeout` argument. |
 | `-H`, `--header` | string | none | HTTP header in `Key: Value` format. Repeatable; each occurrence adds one header. A value without a `:` exits `1` with `Error: Invalid header format. Use 'Key: Value'.` |
-| `-v`, `--verbose` | flag | off | Log the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, to stdout, prefixed `[VERBOSE]`. |
+| `-v`, `--verbose` | flag | off | Log the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, to stdout, prefixed `[VERBOSE]`. The values of `Authorization`, `Proxy-Authorization` and `Cookie` request headers are shown as `<redacted>`. |
 | `-h`, `--help` | flag | not applicable | Print this subcommand's help and exit. |
 
 ### `-d`, `--data` for `POST`, `PUT`, and `PATCH`
@@ -203,11 +203,14 @@ Some of them surprise people who put credentials on the command line.
 - **Secrets on the command line.** Values passed with `-H` and `-d` are visible
   in your shell history and, while the command runs, in the process list.
 - **Verbose output.** `-v` prints the request's headers and JSON body and the
-  response's headers to stdout, unredacted: `Authorization` values, request
-  bodies and `Set-Cookie` values included. Because it shares stdout with the
-  response, `snaffle GET URL -v > file` writes them to the file. Edit the output
-  before pasting it into an issue or a log. `HTTPClient(verbose=True)` behaves
-  the same way.
+  response's headers to stdout. The values of the `Authorization`,
+  `Proxy-Authorization` and `Cookie` request headers are replaced by
+  `<redacted>` (and so are the `auth` and `cookies` arguments of the Python
+  API), but nothing else is: the JSON body, other headers, the URL and the
+  response's headers, `Set-Cookie` included, are shown as they are. Because it
+  shares stdout with the response, `snaffle GET URL -v > file` writes them to
+  the file. Edit the output before pasting it into an issue or a log.
+  `HTTPClient(verbose=True)` behaves the same way.
 
 ## What the CLI does not expose
 

@@ -41,7 +41,7 @@ call `close()`.
 | --- | --- | --- | --- |
 | `timeout` | `int` | `30` | Seconds before a request times out. Must be `> 0`; `ValueError` otherwise. |
 | `retries` | `int` | `3` | Total attempts for a failed request, not retries after the first. Must be `> 0`; `ValueError` otherwise. Translated to `urllib3.util.retry.Retry(total=retries - 1)`. |
-| `verbose` | `bool` | `False` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. |
+| `verbose` | `bool` | `False` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. The values of `Authorization`, `Proxy-Authorization` and `Cookie` headers and of the `auth` and `cookies` arguments are shown as `<redacted>`. |
 | `show_progress` | `bool` | `False` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. A caller who passes `stream=True` opts out; see [`make_request`](#make_request). |
 | `session` | `requests.Session \| None` | `None` | The session to send through. `None` builds the pooled, retrying session described above. A session passed here is used exactly as it arrives; see below. |
 

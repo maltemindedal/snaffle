@@ -299,6 +299,66 @@ class TestSubclassing(unittest.TestCase):
             self.assertEqual(client.patience(), "patient")
 
 
+class TestVerboseOutput(unittest.TestCase):
+    """What `verbose=True` prints about a request before it is sent."""
+
+    @staticmethod
+    def _verbose_get(**kwargs: Any) -> tuple[str, Any]:
+        """Sends one verbose GET through a mocked session and returns its stdout."""
+        response = MagicMock(status_code=200, headers={"Content-Type": "text/plain"})
+        stdout = io.StringIO()
+        with (
+            patch(SESSION_REQUEST, return_value=response) as mock_request,
+            contextlib.redirect_stdout(stdout),
+            HTTPClient(verbose=True) as client,
+        ):
+            client.get("http://example.test/", **kwargs)
+        return stdout.getvalue(), mock_request
+
+    def test_a_request_without_secrets_is_printed_as_it_always_was(self) -> None:
+        """Pin the line's shape, so redaction is known to change nothing else."""
+        output, _ = self._verbose_get(headers={"X-Trace": "t-1"}, json={"k": "v"})
+
+        self.assertEqual(
+            output.splitlines()[0],
+            "[VERBOSE] Sending GET request to http://example.test/ with "
+            "{'headers': {'X-Trace': 't-1'}, 'json': {'k': 'v'}}",
+        )
+
+    def test_credential_headers_are_redacted_but_still_sent(self) -> None:
+        """Test `Authorization`, `Proxy-Authorization` and `Cookie` are not echoed.
+
+        Verbose output is what gets pasted into issues and CI logs, and it shares
+        stdout with the response. The names are matched without regard to case.
+        The request itself must still carry the real values.
+        """
+        headers = {
+            "Authorization": "Bearer S3CR3T",
+            "proxy-authorization": "Basic cHJveHk=",
+            "COOKIE": "sid=abc123",
+            "X-Trace": "t-1",
+        }
+
+        output, mock_request = self._verbose_get(headers=headers)
+
+        for secret in ("S3CR3T", "cHJveHk=", "abc123"):
+            self.assertNotIn(secret, output)
+        self.assertEqual(output.count("<redacted>"), 3)
+        self.assertIn("'X-Trace': 't-1'", output)
+        self.assertEqual(mock_request.call_args.kwargs["headers"], headers)
+
+    def test_the_auth_and_cookies_arguments_are_redacted_but_still_sent(self) -> None:
+        """Test credentials passed as `auth=` or `cookies=` are not echoed either."""
+        output, mock_request = self._verbose_get(
+            auth=("user", "hunter2"), cookies={"sid": "abc123"}
+        )
+
+        self.assertNotIn("hunter2", output)
+        self.assertNotIn("abc123", output)
+        self.assertEqual(mock_request.call_args.kwargs["auth"], ("user", "hunter2"))
+        self.assertEqual(mock_request.call_args.kwargs["cookies"], {"sid": "abc123"})
+
+
 class TestSessionReuse(unittest.TestCase):
     """Test cases covering connection pooling and lifecycle."""
 
