@@ -9,18 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- The `urllib3` floor is now 2.8.0, which fixes three advisories that a
-  hostile server could reach through any response snaffle reads:
+- The `urllib3` floor is now 2.8.0, which fixes three advisories. Two can be
+  reached by a hostile server through any response snaffle reads:
   `GHSA-vxq7-64xx-v4gw` (a chunk-size line of unbounded length was buffered in
-  memory; one response pushed a client's memory use up by more than 500 MiB),
-  `GHSA-gh4c-6fx4-qh6g` (chunked `deflate` streaming could loop forever) and
-  `GHSA-8988-9cw3-xx77` (the TLS settings for an HTTPS proxy could be ignored).
-  A response with an oversized chunk-size line now fails as
-  `HTTPClientError`. urllib3 2.8.0 also rejects hosts containing a raw space or
-  a control character while parsing the URL, so `http://exa mple.com/` now
-  raises `HTTPClientError` ("Request failed: ...") instead of
-  `HTTPConnectionError` after a failed DNS lookup. The exit code of the CLI is
-  `1` either way.
+  memory; one response pushed a client's memory use up by more than 500 MiB) and
+  `GHSA-gh4c-6fx4-qh6g` (chunked `deflate` streaming could loop forever). The
+  third, `GHSA-8988-9cw3-xx77`, is about the TLS settings for an HTTPS proxy
+  being ignored. It matters only when `HTTPS_PROXY` points at an `https://`
+  proxy, and urllib3 warns that a setup which relied on the old behavior may need
+  changes. A response with an oversized chunk-size line now fails as
+  `HTTPClientError`. urllib3 2.8.0 also parses URLs more strictly: a host
+  containing a raw space, a control character or a percent-encoded control
+  character is rejected while parsing, so `http://exa mple.com/` now raises
+  `HTTPClientError` ("Request failed: ...") instead of `HTTPConnectionError`
+  after a failed DNS lookup, and some malformed-URL messages read differently.
+  Header values that were folded over several lines are now joined with spaces.
+  The exit code of the CLI is `1` either way.
 - The `tqdm` floor is now 4.66.3. 4.66.0 to 4.66.2 are affected by
   `GHSA-g7vv-2v7x-gj9p` (`CVE-2024-34062`, low severity, argument injection in
   the `python -m tqdm` command line). snaffle only calls the `tqdm()` API, so it
@@ -30,11 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - The large-download guide claimed that letting `requests` read a `GET` body in
-  one pass is faster than draining it. It is not, for bodies of about 100 KiB
-  and up: `requests` reads in 10 KiB chunks where the progress path reads
-  `DOWNLOAD_CHUNK_SIZE` (64 KiB), and against a local server the plain read
-  measured 13% slower at 100 KiB, 56% at 1 MiB and 64% at 10 MiB. The default
-  is unchanged; the guide now gives the reason that does hold, which is that no
+  one pass is faster than draining it. It is not, for bodies of about 1 MiB and
+  up: `requests` reads in 10 KiB chunks where the progress path reads
+  `DOWNLOAD_CHUNK_SIZE` (64 KiB), and against a local server the plain read was
+  roughly 1.5 to 2 times slower at 1 MiB and 10 MiB, and 5 to 13% slower at 100
+  KiB. The figures vary from run to run. The default is unchanged; the guide now gives the reason that does hold, which is that no
   response is left streaming with nothing reading it.
 - The progress bar no longer runs past 100% for a compressed download. Its total
   is the `Content-Length`, which counts the bytes the server sent, but it was
@@ -140,13 +144,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `PatientClient`, so a method the subclass adds is no longer reported as
   missing. Annotation only; there is no change at run time.
 - The lock file now resolves requests 2.34.2, tqdm 4.70.1, certifi 2026.7.22,
-  idna 3.20 and charset-normalizer 3.5.1. Two of these change behavior. requests
-  2.34 no longer collapses a leading `//` in the URL path, so
+  idna 3.20 and charset-normalizer 3.5.1. Several of these change behavior.
+  requests 2.34 no longer collapses a leading `//` in the URL path, so
   `http://host//a` is sent as `GET //a` where 2.33 sent `GET /a`; this fixes
-  some presigned URLs. certifi 2026.7.22 trusts 121 root certificates where
-  2026.2.25 trusted 137 (20 removed, 4 added), so a server chaining to one of
-  the removed roots no longer verifies. Installs that do not use the lock file
-  are unaffected, because the dependency floors did not move.
+  some presigned URLs. It also stops matching `NO_PROXY` entries greedily, so
+  `NO_PROXY=example.com` no longer bypasses the proxy for `notexample.com`, and a
+  request that was reaching its host only through that accident now goes through
+  the proxy. certifi 2026.7.22 trusts 121 root certificates where 2026.2.25
+  trusted 137 (20 removed, 4 added), so a server chaining to one of the removed
+  roots no longer verifies. charset-normalizer 3.5 changed its charset
+  detection, which can change how a body with no declared charset is decoded.
+  These come from the releases, not from snaffle, so they apply to any install
+  that resolves those versions, with or without the lock file; the dependency
+  floors did not move, so older releases stay allowed, and the lock file only
+  makes the newer ones reproducible.
 - Relicensed from Apache-2.0 to MIT. The `license` field in `pyproject.toml`
   and the `LICENSE` file both carry the new terms; releases up to and including
   3.0.0 remain available under Apache-2.0.

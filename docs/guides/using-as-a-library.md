@@ -72,7 +72,8 @@ with HTTPClient() as client:
 ```
 
 Catch `HTTPClientError` alone if the distinction does not matter. The original
-`requests` exception is always on `__cause__`:
+original exception is always on `__cause__` (from `requests`, or from urllib3 for
+a host it cannot parse):
 
 ```python
 except ResponseError as error:

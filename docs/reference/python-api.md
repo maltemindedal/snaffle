@@ -154,7 +154,7 @@ Raises:
 | `ValueError` | `method` is not in `allowed_methods`. Raised before any network access. |
 | `ResponseError` | The response carried a 4xx or 5xx status, including a retryable status that was still failing on the last attempt. |
 | `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. |
-| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout, too many redirects, or a malformed URL. |
+| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout, too many redirects, or a malformed URL, and urllib3's `LocationValueError` for a host it cannot parse. |
 
 Two boundaries are easy to get wrong:
 
@@ -213,7 +213,8 @@ Exception
 ```
 
 Catching `HTTPClientError` catches all three. Each carries a message string; the
-original `requests` exception is attached as `__cause__`.
+original exception is attached as `__cause__`. It comes from `requests`, or from
+urllib3 when a host cannot be parsed.
 
 ```python
 try:
