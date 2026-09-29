@@ -6,7 +6,7 @@ retitle the window, clear or rewrite what is on screen, or write to the
 clipboard. `for_stdout` shows such characters instead of obeying them.
 
 It changes nothing when stdout is not a terminal, so piped and redirected output
-stays byte for byte what the server sent.
+is exactly what it was before this module existed.
 
 The module is private and imports only `sys`, so the CLI's help paths stay as
 light as ADR 0002 requires.

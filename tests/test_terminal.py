@@ -118,7 +118,7 @@ class TestForStdout(unittest.TestCase):
                 self.assertEqual(for_stdout("a\x1bb"), "a\x1bb")
 
     def test_nothing_changes_when_stdout_is_not_a_terminal(self) -> None:
-        """Test piped and redirected output stays byte for byte what it was."""
+        """Test piped and redirected output is exactly what it was without escaping."""
         hostile = "a\x1b[2Jb\x00c\r\nd\re"
 
         for name, stdout in (("pipe or file", io.StringIO()), ("closed", None)):
