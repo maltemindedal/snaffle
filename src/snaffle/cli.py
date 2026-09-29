@@ -16,6 +16,7 @@ import textwrap
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
 
+from snaffle._terminal import for_stdout
 from snaffle.exceptions import HTTPClientError
 
 if TYPE_CHECKING:
@@ -136,7 +137,7 @@ def _emit_response(response: requests.Response) -> None:
             parts.append(text)
         parts.append("\n")
 
-    sys.stdout.write("".join(parts))
+    sys.stdout.write(for_stdout("".join(parts)))
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -259,7 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     except (ValueError, HTTPClientError) as error:
         # json.JSONDecodeError is a ValueError, so it must be caught above this.
-        print(f"Error: {error}")
+        print(for_stdout(f"Error: {error}"))
         return 1
 
     return 0

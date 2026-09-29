@@ -17,6 +17,7 @@ from urllib3.exceptions import LocationValueError
 from urllib3.util.retry import Retry
 
 from snaffle._download import buffer_into, should_buffer
+from snaffle._terminal import for_stdout
 from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 
 __all__ = ["HTTPClient", "ProgressBar"]
@@ -302,21 +303,21 @@ class HTTPClient:
 
         except requests.exceptions.HTTPError as e:
             if verbose:
-                print(f"[VERBOSE] HTTPError: {e}")
+                print(for_stdout(f"[VERBOSE] HTTPError: {e}"))
             raise ResponseError(f"HTTP error occurred: {e!s}") from e
         except (
             requests.exceptions.ConnectionError,
             requests.exceptions.RetryError,
         ) as e:
             if verbose:
-                print(f"[VERBOSE] ConnectionError: {e}")
+                print(for_stdout(f"[VERBOSE] ConnectionError: {e}"))
             raise HTTPConnectionError(f"Failed to connect to {url}: {e!s}") from e
         except (requests.exceptions.RequestException, LocationValueError) as e:
             # urllib3 raises `LocationValueError` for a host it cannot encode, and
             # `requests` does not wrap it when the host comes from a redirect or
             # only fails once the connection is being made.
             if verbose:
-                print(f"[VERBOSE] RequestException: {e}")
+                print(for_stdout(f"[VERBOSE] RequestException: {e}"))
             raise HTTPClientError(f"Request failed: {e!s}") from e
 
     # The seven verb methods below are `make_request` with the method fixed.

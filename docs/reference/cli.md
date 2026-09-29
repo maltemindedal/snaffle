@@ -200,6 +200,16 @@ Some of them surprise people who put credentials on the command line.
   the `Authorization` header but forwards every other `-H` header, such as
   `X-Api-Key`, to the new origin. A `Cookie` header passed with `-H` is dropped
   on any redirect.
+- **Terminal output.** A server chooses its headers, a plain-text body and the
+  reason phrase in an error message, and an escape sequence in them can retitle
+  your terminal window, clear or rewrite the screen, or write to the clipboard.
+  When stdout is a terminal, control characters in them (C0 and C1 controls and
+  DEL, and a carriage return that does not start a CRLF) are shown as `\xNN`
+  instead of being obeyed; tab, newline and CRLF are kept. This applies to the
+  response, to the `Error:` line and to the exception lines of `-v`. When stdout
+  is not a terminal, a pipe or a file, nothing is changed and every byte the
+  server sent is written. A body that is JSON is re-serialized, which already
+  escapes control characters.
 - **Secrets on the command line.** Values passed with `-H` and `-d` are visible
   in your shell history and, while the command runs, in the process list.
 - **Verbose output.** `-v` prints the request's headers and JSON body and the

@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after a failed DNS lookup, and some malformed-URL messages read differently.
   Header values that were folded over several lines are now joined with spaces.
   The exit code of the CLI is `1` either way.
+- A server can no longer drive your terminal through the CLI's output. Headers, a
+  plain-text body and the reason phrase in an error message are chosen by the
+  server, and written raw to a terminal an escape sequence in them can retitle
+  the window, clear or rewrite the screen (to forge output), or write to the
+  clipboard where the terminal allows it. When stdout is a terminal, the CLI now
+  shows control characters in that text as `\xNN`: C0 and C1 controls, DEL, and a
+  carriage return that does not start a CRLF. Tab, newline and CRLF are kept.
+  This covers the response, the `Error:` line and the exception lines that `-v`
+  prints. Output that is not a terminal, a pipe or a file, is unchanged byte for
+  byte, so scripts see what the server sent. A response that deliberately
+  contains colour codes now shows them as text on a terminal.
 - `--verbose` (and `HTTPClient(verbose=True)`) no longer prints credentials. It
   wrote the whole request to stdout, so a bearer token passed with `-H`, a
   cookie, or a password in `auth=` ended up in bug reports, CI logs and, with
