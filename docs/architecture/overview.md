@@ -27,7 +27,7 @@ and `urllib3`. There is no database, queue, or service. The artifact is a wheel.
 | Module | Responsibility |
 | --- | --- |
 | `__init__.py` | Public API. Re-exports the exceptions eagerly and resolves `HTTPClient` lazily via PEP 562. |
-| `__main__.py` | Process entry point for both `python -m snaffle` and the `snaffle` console script. The single process-level exit point: it turns `KeyboardInterrupt` into a clean exit, and `cli.main`'s returned code into the process status. |
+| `__main__.py` | Process entry point for both `python -m snaffle` and the `snaffle` console script. The single process-level exit point: it turns `KeyboardInterrupt` into a clean exit, a closed stdout pipe into exit `1`, and `cli.main`'s returned code into the process status. |
 | `cli.py` | Argument parsing, header and body parsing, response rendering, error-to-exit-code mapping. Imports `HTTPClient` only after the help paths have been ruled out. |
 | `http_client.py` | The client: session construction, retry policy, method validation, exception translation. Asks `_download` whether to buffer a body, and hands it the body when the answer is yes. |
 | `_download.py` | Private. Owns the progress-bar download whole: whether to drain, the size threshold, the deferred `tqdm` import, the chunk loop, and writing the buffer back onto the response. |
