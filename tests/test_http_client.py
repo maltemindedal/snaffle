@@ -12,6 +12,7 @@ import socketserver
 import threading
 import unittest
 import weakref
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, ClassVar, NoReturn, cast
 from unittest.mock import MagicMock, patch
@@ -574,15 +575,18 @@ class _NoSocketPool(HTTPConnectionPool):
     urllib3, which is the price of watching the loop from outside.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, failure: Callable[[], Exception] | None = None) -> None:
         super().__init__("127.0.0.1", 9)
         self.attempts = 0
+        self._failure = failure or (
+            lambda: ConnectTimeoutError("no socket is opened by this test double")
+        )
 
     @override
     def _new_conn(self) -> NoReturn:
-        """Counts the attempt and fails it as if the connection had timed out."""
+        """Counts the attempt and fails it, by default as a connect timeout."""
         self.attempts += 1
-        raise ConnectTimeoutError("no socket is opened by this test double")
+        raise self._failure()
 
 
 class _NoSocketAdapter(HTTPAdapter):
@@ -638,6 +642,51 @@ class TestRetryWithoutASocket(unittest.TestCase):
             client.post("http://never.invalid/thing", json={"a": 1})
 
         self.assertEqual(pool.attempts, 3)
+
+    def test_a_read_timeout_maps_by_method(self) -> None:
+        """Test the documented mapping of a read timeout, for every verb.
+
+        A method that may be replayed has its read timeout retried, and once the
+        attempts are spent urllib3 raises `MaxRetryError`, which `requests` makes
+        a `ConnectionError`: an `HTTPConnectionError`. `POST` and `PATCH` are never
+        replayed after a read failure, so the `ReadTimeout` itself reaches the
+        general case: an `HTTPClientError`.
+        """
+
+        def read_timeout() -> Exception:
+            return ReadTimeoutError(cast(Any, None), "/", "read timed out")
+
+        retried = ("get", "head", "put", "delete", "options")
+        for verb in (*retried, "post", "patch"):
+            with self.subTest(verb=verb), patch("urllib3.util.retry.time.sleep"):
+                pool = _NoSocketPool(read_timeout)
+                with self._client(3, pool) as client:
+                    if verb in retried:
+                        with (
+                            self.assertLogs("urllib3", "WARNING"),
+                            self.assertRaises(HTTPConnectionError),
+                        ):
+                            getattr(client, verb)("http://never.invalid/thing")
+                        self.assertEqual(pool.attempts, 3)
+                    else:
+                        with self.assertRaises(HTTPClientError) as caught:
+                            getattr(client, verb)("http://never.invalid/thing")
+                        self.assertNotIsInstance(caught.exception, HTTPConnectionError)
+                        self.assertEqual(pool.attempts, 1, "never replayed")
+
+    def test_a_connect_timeout_is_a_connection_error_for_every_verb(self) -> None:
+        """Test a connect timeout never reaches the general `HTTPClientError` case."""
+        for verb in ("get", "head", "put", "delete", "options", "post", "patch"):
+            with self.subTest(verb=verb), patch("urllib3.util.retry.time.sleep"):
+                pool = _NoSocketPool()
+                with (
+                    self.assertLogs("urllib3", "WARNING"),
+                    self._client(2, pool) as client,
+                    self.assertRaises(HTTPConnectionError),
+                ):
+                    getattr(client, verb)("http://never.invalid/thing")
+
+                self.assertEqual(pool.attempts, 2)
 
     def test_a_one_attempt_client_does_not_retry(self) -> None:
         """Test the attempt count follows the policy rather than the double."""

@@ -153,8 +153,8 @@ Raises:
 | --- | --- |
 | `ValueError` | `method` is not in `allowed_methods`. Raised before any network access. |
 | `ResponseError` | The response carried a 4xx or 5xx status, including a retryable status that was still failing on the last attempt. |
-| `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. |
-| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout, too many redirects, or a malformed URL, and urllib3's `LocationValueError` for a host it cannot parse. |
+| `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. Also a read timeout on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS`, which is retried and, once the attempts are spent, ends as a connection error. |
+| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout on a `POST` or `PATCH`, too many redirects, or a malformed URL, and urllib3's `LocationValueError` for a host it cannot parse. |
 
 Two boundaries are easy to get wrong:
 
@@ -165,10 +165,15 @@ Two boundaries are easy to get wrong:
   status, which is more useful than a generic connection failure. Only
   *connection* retries exhaust into `RetryError`, and that is what the
   `HTTPConnectionError` row above refers to.
-- **A connect timeout is an `HTTPConnectionError`; a read timeout is an
-  `HTTPClientError`.** `requests.exceptions.ConnectTimeout` subclasses
-  `ConnectionError`, so it is caught as a connection failure. `ReadTimeout`
-  does not, so it falls through to the general case.
+- **A connect timeout is an `HTTPConnectionError` for every method. A read
+  timeout depends on the method.** `requests.exceptions.ConnectTimeout`
+  subclasses `ConnectionError`, so it is caught as a connection failure. A read
+  timeout on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS` is retried; when the
+  attempts are spent urllib3 raises `MaxRetryError`, which `requests` turns into
+  a `ConnectionError`, so it is an `HTTPConnectionError` too. A `POST` or `PATCH`
+  is never replayed after a read failure, so its `ReadTimeout` reaches the
+  general case and is an `HTTPClientError`. A server that stopped answering
+  therefore reports `Failed to connect to ...` for a `GET`.
 
 #### `close`
 
