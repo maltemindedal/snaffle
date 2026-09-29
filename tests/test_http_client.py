@@ -340,13 +340,18 @@ class TestVerboseOutput(unittest.TestCase):
             "X-Trace": "t-1",
         }
 
+        before = dict(headers)
+
         output, mock_request = self._verbose_get(headers=headers)
 
         for secret in ("S3CR3T", "cHJveHk=", "abc123"):
             self.assertNotIn(secret, output)
         self.assertEqual(output.count("<redacted>"), 3)
         self.assertIn("'X-Trace': 't-1'", output)
-        self.assertEqual(mock_request.call_args.kwargs["headers"], headers)
+        # Compared with a copy taken beforehand: redacting the caller's own dict
+        # in place would change what is sent, and `headers` is that same dict.
+        self.assertEqual(mock_request.call_args.kwargs["headers"], before)
+        self.assertEqual(headers, before)
 
     def test_the_auth_and_cookies_arguments_are_redacted_but_still_sent(self) -> None:
         """Test credentials passed as `auth=` or `cookies=` are not echoed either."""
