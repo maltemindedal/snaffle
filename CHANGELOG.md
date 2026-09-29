@@ -118,14 +118,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was printed, not even the status or headers. The body is now printed as text,
   like any other body that is not valid JSON. A server chooses the body, so this
   was remotely triggerable.
-- A JSON response nested more than 1,000 levels deep is now printed as received
-  instead of being indented. Python 3.13 and 3.14 parse nesting far past the
-  1,000 or so levels that 3.10 to 3.12 accept, and `indent=4` writes four spaces
-  per level on every line, so the output grew with the square of the depth:
-  5,000 levels wrote 100 MB, and on 3.14, which has no practical limit, a 40 KB
+- A JSON response whose indentation would be enormous is now printed as
+  received instead of being indented. `indent=4` starts every line with four
+  spaces per level of depth, so the output of a deeply nested body grows with
+  the square of the depth, and with its width as well: 5,000 levels wrote
+  100 MB, 990 levels holding 100,000 numbers turned a 202 KB body into 400 MB,
+  and on Python 3.14, which parses nesting without a practical limit, a 40 KB
   body nested 20,000 levels needed several gigabytes and exhausted memory. A
-  server chooses the body, so this was remotely triggerable. Up to 1,000 levels
-  the output is unchanged, and 3.10 to 3.12 never printed anything deeper.
+  server chooses the body, so this was remotely triggerable. The limit is
+  indentation above both 8 MiB and 64 times the size of the body; GeoJSON, which
+  nests deeply, indents to about six times its size. Python 3.10 to 3.12
+  already refused to print past about 1,000 levels.
 - A response whose `Content-Length` is not an integer, such as `abc` or a
   duplicated header that urllib3 joins into `5, 5`, no longer makes a download
   with `show_progress` fail. The progress path called `int()` on the header and

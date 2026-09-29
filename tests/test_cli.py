@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 
 from typing_extensions import override
 
-from snaffle.cli import EXAMPLES, MAX_PRETTY_DEPTH, _nests_too_deeply, main
+from snaffle.cli import EXAMPLES, _indent_exceeds, main
 from snaffle.exceptions import HTTPClientError
 
 MAKE_REQUEST = "snaffle.http_client.HTTPClient.make_request"
@@ -123,10 +123,19 @@ class TestCLI(unittest.TestCase):
         self.assertIn("Status Code: 200", output)
         self.assertIn(body, output)
 
-    @patch(MAKE_REQUEST)
-    def test_a_body_nested_past_the_depth_cap_is_not_indented(
-        self, mock_request: MagicMock
-    ) -> None:
+    def _print_body(self, body: str) -> str:
+        """Prints a JSON `body` through the CLI and returns what it wrote."""
+        with patch(MAKE_REQUEST) as mock_request:
+            mock_request.return_value = self._build_response(
+                text=body, headers={"content-type": "application/json"}
+            )
+            with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+                exit_code = main(["GET", "https://api.example.com"])
+
+        self.assertEqual(exit_code, 0)
+        return fake_stdout.getvalue()
+
+    def test_a_body_nested_past_the_indent_budget_is_not_indented(self) -> None:
         """Test deep JSON is printed as received rather than pretty-printed.
 
         Regression: Python 3.13 and 3.14 parse this body, and `indent=4` then
@@ -136,17 +145,35 @@ class TestCLI(unittest.TestCase):
         so the assertion holds on all of them.
         """
         body = "[" * 5_000 + "]" * 5_000
-        mock_request.return_value = self._build_response(
-            text=body, headers={"content-type": "application/json"}
-        )
 
-        with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
-            exit_code = main(["GET", "https://api.example.com"])
+        output = self._print_body(body)
 
-        output = fake_stdout.getvalue()
-        self.assertEqual(exit_code, 0)
         self.assertIn(body, output)
         self.assertLess(len(output), 3 * len(body))
+
+    def test_a_wide_body_that_is_also_deep_is_not_indented(self) -> None:
+        """Test depth alone is not the limit: width multiplies it.
+
+        Regression: a cap on the depth let through 990 levels holding 100,000
+        scalars, a 202 KB body that printed as 400 MB, since every scalar line
+        starts with as many as 3,960 spaces. This one is 41 KB and would print
+        as 40 MB.
+        """
+        body = "[" * 500 + "1," * 20_000 + "1" + "]" * 500
+
+        output = self._print_body(body)
+
+        self.assertIn(body, output)
+        self.assertLess(len(output), 3 * len(body))
+
+    def test_ordinary_nested_json_is_still_indented(self) -> None:
+        """Test a document of realistic shape is pretty-printed as before."""
+        body = '{"a": {"b": [{"c": [1, 2, {"d": null}]}, "x"]}}'
+
+        output = self._print_body(body)
+
+        self.assertIn('{\n    "a": {\n        "b": [', output)
+        self.assertNotIn(body, output)
 
     @patch(MAKE_REQUEST)
     def test_lowercase_alias_sends_the_uppercase_method(
@@ -292,8 +319,8 @@ class TestCLI(unittest.TestCase):
         )
 
 
-class TestNestingDepth(unittest.TestCase):
-    """Test cases for the depth limit on pretty-printed JSON."""
+class TestIndentBudget(unittest.TestCase):
+    """Test cases for the limit on how much indentation a body may need."""
 
     @staticmethod
     def _nested(depth: int, *, wrap: bool = False) -> Any:
@@ -303,31 +330,44 @@ class TestNestingDepth(unittest.TestCase):
             value = {"k": value} if wrap else [value]
         return value
 
-    def test_the_cap_is_inclusive(self) -> None:
-        """Test `MAX_PRETTY_DEPTH` levels pass and one more does not."""
-        self.assertFalse(_nests_too_deeply(self._nested(MAX_PRETTY_DEPTH)))
-        self.assertTrue(_nests_too_deeply(self._nested(MAX_PRETTY_DEPTH + 1)))
+    def test_it_counts_four_spaces_per_level_on_every_line(self) -> None:
+        """Test the total for a small value, worked out by hand.
 
-    def test_objects_count_as_levels_too(self) -> None:
-        """Test the walk follows dict values as well as list items."""
-        self.assertFalse(_nests_too_deeply(self._nested(MAX_PRETTY_DEPTH, wrap=True)))
-        self.assertTrue(
-            _nests_too_deeply(self._nested(MAX_PRETTY_DEPTH + 1, wrap=True))
-        )
+        `[[1, 2, 3]]` prints one item at depth 1 (4 spaces) and three at depth 2
+        (8 spaces each), 28 in all.
+        """
+        value = [[1, 2, 3]]
 
-    def test_depth_is_the_deepest_branch_not_the_widest_level(self) -> None:
-        """Test a wide, shallow document is not mistaken for a deep one."""
-        wide = [[{"a": [1, 2, "x"]}] * 50] * 2_000
-        self.assertFalse(_nests_too_deeply(wide))
-        self.assertTrue(
-            _nests_too_deeply([1, "x", self._nested(MAX_PRETTY_DEPTH + 1), None])
-        )
+        self.assertFalse(_indent_exceeds(value, 28))
+        self.assertTrue(_indent_exceeds(value, 27))
 
-    def test_scalars_and_empty_containers_are_shallow(self) -> None:
-        """Test top-level values that are not containers are never too deep."""
+    def test_objects_count_like_lists(self) -> None:
+        """Test the walk follows dict values, one line per key."""
+        value = {"a": {"b": 1, "c": 2, "d": 3}}
+
+        self.assertFalse(_indent_exceeds(value, 28))
+        self.assertTrue(_indent_exceeds(value, 27))
+
+    def test_the_deepest_branch_counts_however_narrow(self) -> None:
+        """Test one deep branch among shallow items is found."""
+        deep = self._nested(1_000)
+
+        self.assertFalse(_indent_exceeds([1, "x", deep, None], 10_000_000))
+        self.assertTrue(_indent_exceeds([1, "x", deep, None], 1_000_000))
+
+    def test_dicts_and_lists_nest_alike(self) -> None:
+        """Test both container types are followed to the bottom."""
+        for wrap in (False, True):
+            with self.subTest(wrap=wrap):
+                deep = self._nested(1_000, wrap=wrap)
+                self.assertFalse(_indent_exceeds(deep, 2_000_000))
+                self.assertTrue(_indent_exceeds(deep, 1_000_000))
+
+    def test_scalars_and_empty_containers_need_no_indentation(self) -> None:
+        """Test top-level values that hold no lines are never over budget."""
         for value in (0, "text" * 2_000, None, True, [], {}):
             with self.subTest(value=value):
-                self.assertFalse(_nests_too_deeply(value))
+                self.assertFalse(_indent_exceeds(value, 0))
 
 
 if __name__ == "__main__":
