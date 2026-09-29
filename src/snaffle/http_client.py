@@ -239,7 +239,9 @@ class HTTPClient:
         Args:
             method (str): The HTTP method to use (e.g., 'GET', 'POST').
             url (str): The URL to send the request to.
-            **kwargs: Keyword arguments passed to `requests.Session.request`.
+            **kwargs: Keyword arguments passed to `requests.Session.request`,
+                except `timeout`, which is set on the client and raises a
+                `TypeError` if passed here.
 
         Returns:
             requests.Response: The HTTP response object.
