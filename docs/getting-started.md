@@ -81,8 +81,8 @@ Response Body:
 }
 ```
 
-Commands are case-insensitive. `uv run snaffle get https://httpbin.org/get`
-does the same thing.
+Every command also works in lower case: `uv run snaffle get https://httpbin.org/get`
+does the same thing. Mixed case, such as `Get`, is not accepted.
 
 ## Step 5. Send a JSON body
 
