@@ -64,12 +64,13 @@ with HTTPClient() as client:
         # retried and never recovered arrives here too, carrying the real code.
         print(f"Server said no: {error}")
     except HTTPConnectionError as error:
-        # DNS failure, refused connection, a connect timeout, or a read timeout
-        # on a GET, HEAD, PUT, DELETE or OPTIONS once its retries are spent.
+        # DNS failure, refused connection, a connect timeout, a read timeout
+        # on a GET, HEAD, PUT, DELETE or OPTIONS once its retries are spent, or
+        # a server that went silent part-way through the body (any method).
         print(f"Could not reach it: {error}")
     except HTTPClientError as error:
-        # Anything else -- a read timeout on a POST or PATCH, too many redirects,
-        # a malformed URL.
+        # Anything else -- a read timeout on a POST or PATCH before the response
+        # begins, too many redirects, a malformed URL.
         print(f"Request failed: {error}")
 ```
 

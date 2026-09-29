@@ -995,6 +995,62 @@ class TestProgressOnAChunkedBody(_LocalServerTestCase):
         self.assertEqual(bar.advanced, bar.total)
 
 
+class _StalledBodyHandler(_QuietHandler):
+    """Sends a 200 whose body stops after three of a hundred bytes, and holds on."""
+
+    hits: ClassVar[list[str]] = []
+    release: ClassVar[threading.Event] = threading.Event()
+
+    def _stall(self) -> None:
+        """Records the request, sends the headers and a fragment, then waits."""
+        self.hits.append(self.command)
+        self.send_response(200)
+        self.send_header("Content-Length", "100")
+        self.end_headers()
+        self.wfile.write(b"abc")
+        self.wfile.flush()
+        self.release.wait(10)
+
+    do_GET = _stall
+    do_POST = _stall
+
+
+class TestReadTimeoutMidBody(_LocalServerTestCase):
+    """A read timeout after the headers maps differently from one before them.
+
+    `TestRetryWithoutASocket.test_a_read_timeout_maps_by_method` covers a server
+    that never answers. This is the common hang, a download that stops.
+    """
+
+    handler = _StalledBodyHandler
+
+    @classmethod
+    @override
+    def tearDownClass(cls) -> None:
+        """Lets the handler threads go before the server is closed."""
+        _StalledBodyHandler.release.set()
+        super().tearDownClass()
+
+    def test_a_stalled_body_is_a_connection_error_and_is_not_retried(self) -> None:
+        """Test `GET` and `POST` both end as `HTTPConnectionError`, after one try.
+
+        `requests` raises `ConnectionError` when the body read times out, which
+        is a connection error whatever the method, and the retry policy is out
+        of reach once the response has started. Neither the `POST` landing in
+        `HTTPClientError` nor the `GET` being replayed is what happens.
+        """
+        for verb in ("get", "post"):
+            with self.subTest(verb=verb):
+                _StalledBodyHandler.hits.clear()
+                with (
+                    HTTPClient(timeout=1, retries=3) as client,
+                    self.assertRaises(HTTPConnectionError),
+                ):
+                    getattr(client, verb)(f"{self.base_url}/")
+
+                self.assertEqual(_StalledBodyHandler.hits, [verb.upper()])
+
+
 class _RetryAfterHandler(_QuietHandler):
     """Answers every GET with a 503 that asks the client to wait 99,999 seconds."""
 

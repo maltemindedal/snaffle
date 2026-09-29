@@ -159,8 +159,8 @@ Raises:
 | --- | --- |
 | `ValueError` | `method` is not in `allowed_methods`. Raised before any network access. |
 | `ResponseError` | The response carried a 4xx or 5xx status, including a retryable status that was still failing on the last attempt. |
-| `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. Also a read timeout on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS`, which is retried and, once the attempts are spent, ends as a connection error. |
-| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout on a `POST` or `PATCH`, too many redirects, or a malformed URL, and urllib3's `LocationValueError` for a host it cannot parse. |
+| `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. Also a read timeout on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS` while waiting for the response, which is retried and, once the attempts are spent, ends as a connection error, and a read timeout while the body is being read, for every method, which is not retried. |
+| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout on a `POST` or `PATCH` while waiting for the response, too many redirects, or a malformed URL, and urllib3's `LocationValueError` for a host it cannot parse. |
 
 Two boundaries are easy to get wrong:
 
@@ -172,14 +172,24 @@ Two boundaries are easy to get wrong:
   *connection* retries exhaust into `RetryError`, and that is what the
   `HTTPConnectionError` row above refers to.
 - **A connect timeout is an `HTTPConnectionError` for every method. A read
-  timeout depends on the method.** `requests.exceptions.ConnectTimeout`
-  subclasses `ConnectionError`, so it is caught as a connection failure. A read
-  timeout on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS` is retried; when the
-  attempts are spent urllib3 raises `MaxRetryError`, which `requests` turns into
-  a `ConnectionError`, so it is an `HTTPConnectionError` too. A `POST` or `PATCH`
+  timeout depends on the method, and on when it strikes.**
+  `requests.exceptions.ConnectTimeout` subclasses `ConnectionError`, so it is
+  caught as a connection failure. A read timeout *while waiting for the response*
+  on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS` is retried; when the attempts
+  are spent urllib3 raises `MaxRetryError`, which `requests` turns into a
+  `ConnectionError`, so it is an `HTTPConnectionError` too. A `POST` or `PATCH`
   is never replayed after a read failure, so its `ReadTimeout` reaches the
   general case and is an `HTTPClientError`. A server that stopped answering
   therefore reports `Failed to connect to ...` for a `GET`.
+- **A timeout after the headers is a connection error and is not retried.**
+  Once the status line has arrived the request is under way, so a server that
+  sends the headers and part of the body and then goes silent raises
+  `requests.exceptions.ConnectionError` from the body read, for every method,
+  after one attempt. That is an `HTTPConnectionError` even for a `POST` or
+  `PATCH`. It happens inside `make_request` for an ordinary call, which reads the
+  body before returning, and while draining the body when `show_progress` is on.
+  With `stream=True` you read the body yourself, after `make_request` has
+  returned, and the exception is `requests`' own.
 
 #### `close`
 
