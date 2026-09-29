@@ -30,12 +30,15 @@ Exhaustive and factual. Not meant to be read end to end.
 
 | Document | What it covers | Who it is for |
 | --- | --- | --- |
-| [CLI reference](reference/cli.md) | Every command, alias, and flag; output format; exit codes; options unavailable through the CLI. | Anyone writing a command line or a script. |
+| [CLI reference](reference/cli.md) | Every command, alias, and flag; output format; exit codes; security notes; options unavailable through the CLI. | Anyone writing a command line or a script. |
 | [Python API reference](reference/python-api.md) | `HTTPClient` constructor arguments, attributes, class constants, and methods; the exception hierarchy; the retry table. | Developers integrating the library. |
 
-There is no configuration reference: Snaffle reads no environment variables and
-no configuration files. Configure it with CLI flags,
-constructor arguments, and the class constants documented above.
+There is no configuration reference: Snaffle itself reads no environment
+variables and no configuration files. Configure it with CLI flags, constructor
+arguments, and the class constants documented above. The `requests` library
+underneath does read the environment (proxies, CA bundles) and `~/.netrc`; the
+[security notes](reference/cli.md#security-notes) list what that means in
+practice.
 
 ## Explanation
 
