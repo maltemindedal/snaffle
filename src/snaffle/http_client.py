@@ -242,10 +242,14 @@ class HTTPClient:
             except requests.exceptions.HTTPError:
                 if buffer_body:
                     # This request asked for `stream=True`, so the error body is
-                    # still on the socket. Read it, as a non-streamed request
-                    # would have, so the connection returns to the pool and the
-                    # exception's response keeps a readable `.text`.
-                    _ = response.content
+                    # still on the socket. Read it so the connection returns to
+                    # the pool and the exception's response keeps a readable
+                    # `.text`. The status is what the caller needs to hear, so a
+                    # body that cannot be read only costs the connection.
+                    try:
+                        _ = response.content
+                    except requests.exceptions.RequestException:
+                        response.close()
                 raise
 
             if verbose:

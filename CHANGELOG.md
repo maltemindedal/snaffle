@@ -78,9 +78,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the exception was garbage collected. A script that kept its `ResponseError`
   objects held one socket per failure, and every failure lost connection reuse;
   `client.close()` could not release them. The error body is now read before
-  the exception is raised, as it already was without `show_progress`, so
-  `error.__cause__.response.text` still works. A caller who passes
-  `stream=True` still gets the response unread.
+  the exception is raised, so `error.__cause__.response.text` still works. If
+  that read fails, because the body is truncated, undecodable or stalls until the
+  read timeout, the connection is closed and the `ResponseError` with the real
+  status is still raised, as before. A large error body is now read in full. A
+  caller who passes `stream=True` still gets the response unread.
 - The `speedups` extra now installs the codecs urllib3 actually loads. It named
   `zstandard`, which urllib3 stopped using in 2.6.0, so on Python 3.10 to 3.13
   the documented Zstandard negotiation never happened even with the extra
