@@ -228,9 +228,10 @@ Some of them surprise people who put credentials on the command line.
 - **Verbose output.** `-v` prints the request's headers and JSON body and the
   response's headers to stdout. The values of the `Authorization`,
   `Proxy-Authorization` and `Cookie` request headers are replaced by
-  `<redacted>` (and so are the `auth` and `cookies` arguments of the Python
-  API), but nothing else is: the JSON body, other headers, the URL and the
-  response's headers, `Set-Cookie` included, are shown as they are. Because it
+  `<redacted>` (and so are the `auth`, `cookies` and `proxies` arguments of the
+  Python API), but nothing else is: the JSON body, `data`, `params`, other
+  headers, `X-Api-Key` among them, the URL and the response's headers,
+  `Set-Cookie` included, are shown as they are. Because it
   shares stdout with the response, `snaffle GET URL -v > file` writes them to
   the file. Edit the output before pasting it into an issue or a log.
   `HTTPClient(verbose=True)` behaves the same way.

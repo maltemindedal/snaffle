@@ -353,6 +353,36 @@ class TestVerboseOutput(unittest.TestCase):
         self.assertEqual(mock_request.call_args.kwargs["headers"], before)
         self.assertEqual(headers, before)
 
+    def test_header_names_given_as_bytes_are_redacted_too(self) -> None:
+        """Test `requests` accepts `bytes` for a header name, and so must redaction.
+
+        `str(b"Authorization")` is `"b'Authorization'"`, which no name in the
+        list matches, so such a header used to be printed in full.
+        """
+        headers = {b"Authorization": b"Bearer S3CR3T", b"COOKIE": b"sid=abc123"}
+        before = dict(headers)
+
+        output, mock_request = self._verbose_get(headers=headers)
+
+        self.assertNotIn("S3CR3T", output)
+        self.assertNotIn("abc123", output)
+        self.assertEqual(output.count("<redacted>"), 2)
+        self.assertEqual(mock_request.call_args.kwargs["headers"], before)
+
+    def test_the_proxies_argument_is_redacted_but_still_sent(self) -> None:
+        """Test a proxy URL with a password in it is not echoed.
+
+        `proxies={"https": "http://user:pw@host:3128"}` is how `requests` is
+        given proxy credentials, and `Proxy-Authorization` is redacted already.
+        """
+        proxies = {"http": "http://user:hunter2@proxy.test:3128"}
+
+        output, mock_request = self._verbose_get(proxies=proxies)
+
+        self.assertNotIn("hunter2", output)
+        self.assertNotIn("proxy.test", output)
+        self.assertEqual(mock_request.call_args.kwargs["proxies"], proxies)
+
     def test_the_auth_and_cookies_arguments_are_redacted_but_still_sent(self) -> None:
         """Test credentials passed as `auth=` or `cookies=` are not echoed either."""
         output, mock_request = self._verbose_get(
