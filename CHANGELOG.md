@@ -41,8 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advanced by the length of each decoded chunk, so a gzip, deflate, Brotli or
   Zstandard response of 5 MiB or more finished at several hundred percent and
   tqdm dropped the total. It now advances by the bytes read off the wire
-  (`response.raw.tell()`), and falls back to the decoded length for a transport
-  that cannot report a position. The recipe for driving your own bar in the
+  (`response.raw.tell()`), and falls back to the decoded length whenever that
+  position is missing or does not behave like a byte count: a chunked body, a
+  response from a caching session, or a test double. The recipe for driving your own bar in the
   large-download guide had the same flaw and is corrected. The bar is on stderr;
   stdout is unchanged.
 - Piping the CLI into a reader that exits early, as in `snaffle GET URL | head -1`,

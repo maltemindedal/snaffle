@@ -21,8 +21,6 @@ def _unread_response(content_length: str | None, chunks: list[bytes]) -> Any:
         {} if content_length is None else {"content-length": content_length}
     )
     response.iter_content.return_value = chunks
-    # No usable position on the raw stream, so the bar counts decoded chunks.
-    response.raw = None
     return response
 
 
@@ -197,21 +195,82 @@ class TestBufferInto(unittest.TestCase):
             mock_tqdm.return_value.update.call_args_list, [call(8), call(2)]
         )
 
-    def test_a_raw_stream_that_cannot_report_a_position_is_counted_decoded(
-        self,
-    ) -> None:
-        """Test a stand-in transport without a usable `tell()` still gets a bar."""
-        response = _unread_response(str(6 * MIB), [b"ab", b"cd"])
-        response.raw = MagicMock()
-        response.raw.tell.side_effect = OSError("not seekable")
+    def test_a_position_that_cannot_be_trusted_is_counted_decoded(self) -> None:
+        """Test the bar falls back to decoded bytes whenever `raw.tell()` misleads.
+
+        Regression: `tell()` stays at zero for a chunked body and for a response
+        served by a caching session, which froze the bar at 0%. A stand-in
+        transport may also return something that is not a count, run backwards,
+        or fail part-way through.
+        """
+
+        def raising_after(calls: int) -> Any:
+            seen = 0
+
+            def tell() -> int:
+                nonlocal seen
+                seen += 1
+                if seen > calls:
+                    raise OSError("not seekable")
+                return seen
+
+            return tell
+
+        # Each case: the `tell` behaviour, and the steps the bar is advanced by.
+        cases: dict[str, tuple[Any, list[int]]] = {
+            "never moves": (lambda: 0, [2, 2]),
+            "not a number": (lambda: None, [2, 2]),
+            "not an integer": (lambda: 1.5, [2, 2]),
+            "raises": (raising_after(0), [2, 2]),
+            # The first chunk is counted by its wire position, then decoded bytes.
+            "raises mid-body": (raising_after(1), [1, 2]),
+        }
+        for name, (tell, expected) in cases.items():
+            with self.subTest(tell=name):
+                response = _unread_response(str(6 * MIB), [b"ab", b"cd"])
+                response.raw.tell.side_effect = tell
+
+                with patch("tqdm.tqdm") as mock_tqdm:
+                    buffer_into(
+                        response, chunk_size=8, min_size=5 * MIB, desc="Downloading"
+                    )
+
+                steps = [
+                    c.args[0] for c in mock_tqdm.return_value.update.call_args_list
+                ]
+                self.assertEqual(steps, expected)
+                self.assertEqual(response._content, b"abcd")
+
+    def test_a_position_that_runs_backwards_is_no_longer_trusted(self) -> None:
+        """Test a position that goes down stops being used, rather than feeding tqdm."""
+        positions = iter([5, 3, 9, 9])
+        response = _unread_response(str(6 * MIB), [b"ab", b"cd", b"ef"])
+        response.raw.tell.side_effect = lambda: next(positions)
 
         with patch("tqdm.tqdm") as mock_tqdm:
             buffer_into(response, chunk_size=8, min_size=5 * MIB, desc="Downloading")
 
-        self.assertEqual(
-            mock_tqdm.return_value.update.call_args_list, [call(2), call(2)]
-        )
-        self.assertEqual(response._content, b"abcd")
+        steps = [c.args[0] for c in mock_tqdm.return_value.update.call_args_list]
+        self.assertEqual(steps, [5, 2, 2], "then counted decoded, never negative")
+
+    def test_a_response_without_a_raw_stream_still_downloads(self) -> None:
+        """Test a duck-typed response, such as an autospecced mock, has no `raw`.
+
+        A test double built with `MagicMock(spec=requests.Response)` has no
+        instance attributes such as `raw`. It must not fail, with a bar or without.
+        """
+        for length in ("4", str(6 * MIB)):
+            with self.subTest(content_length=length):
+                response = MagicMock(spec=requests.Response)
+                response.headers = {"content-length": length}
+                response.iter_content.return_value = [b"ab", b"cd"]
+
+                with patch("tqdm.tqdm"):
+                    buffer_into(
+                        response, chunk_size=8, min_size=5 * MIB, desc="Downloading"
+                    )
+
+                self.assertEqual(response._content, b"abcd")
 
     def test_bar_is_closed_when_the_body_fails_midway(self) -> None:
         """Test a broken download does not leave the terminal owned by tqdm."""
