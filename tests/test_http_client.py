@@ -639,6 +639,18 @@ class TestRetryAgainstRealServer(_LocalServerTestCase):
             response = cast(Any, error.__cause__).response
             self.assertEqual(response.text, "{}", "the error body stays readable")
 
+    def test_a_stream_the_caller_asked_for_is_left_unread_on_an_error(self) -> None:
+        """Test the client does not read the error body of a stream the caller owns."""
+        with (
+            HTTPClient(show_progress=True, retries=1) as client,
+            self.assertRaises(ResponseError) as caught,
+        ):
+            client.get(f"{self.base_url}/missing", stream=True)
+
+        response = cast(Any, caught.exception.__cause__).response
+        self.assertFalse(response._content_consumed, "the client did not read it")
+        response.close()
+
 
 #: Deliberately over `MIN_SIZE_FOR_PROGRESS`, so the progress path is fully live.
 LARGE_BODY = b"snaffle!" * (6 * 1024 * 1024 // 8)
@@ -916,6 +928,41 @@ class TestServerChosenLocation(_LocalServerTestCase):
             client.get(f"{self.base_url}/")
 
         self.assertIsInstance(caught.exception.__cause__, LocationParseError)
+
+
+class _TruncatedErrorHandler(_QuietHandler):
+    """Answers 500 and promises 100 bytes, sends ten, then hangs up."""
+
+    def do_GET(self) -> None:
+        """Sends a short error body and closes the connection."""
+        self.send_response(500)
+        self.send_header("Content-Length", "100")
+        self.end_headers()
+        self.wfile.write(b"0123456789")
+        self.close_connection = True
+
+
+class TestErrorBodyDrain(_LocalServerTestCase):
+    """Reading a streamed error body must never change what the caller is told."""
+
+    handler = _TruncatedErrorHandler
+
+    def test_a_truncated_error_body_still_reports_the_status(self) -> None:
+        """Test the HTTP status wins when the error body cannot be read.
+
+        The client reads a streamed error body so the connection can be reused.
+        When that read fails, the caller must still get the `ResponseError` with
+        the real status, as they did before the read existed, not a transport
+        error that hides it.
+        """
+        with (
+            HTTPClient(show_progress=True, retries=1) as client,
+            self.assertRaises(ResponseError) as caught,
+        ):
+            client.get(f"{self.base_url}/")
+
+        response = cast(Any, caught.exception.__cause__).response
+        self.assertEqual(response.status_code, 500)
 
 
 class TestMalformedHosts(unittest.TestCase):
