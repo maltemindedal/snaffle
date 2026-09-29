@@ -8,7 +8,6 @@ import importlib.util
 import io
 import os
 import random
-import re
 import socketserver
 import threading
 import unittest
@@ -708,6 +707,29 @@ class TestProgressAgainstRealServer(_LocalServerTestCase):
             self.assertEqual(response.content, LARGE_BODY)
 
 
+class _RecordingBar:
+    """Stands in for `tqdm`, recording its total and how far it was advanced.
+
+    The tests below check the contract with the bar, not the text tqdm draws,
+    which depends on `TQDM_*` settings that tqdm reads when it is imported.
+    """
+
+    instances: ClassVar[list[_RecordingBar]] = []
+
+    def __init__(self, total: int | None = None, **_: Any) -> None:
+        self.total = total
+        self.advanced = 0
+        self.instances.append(self)
+
+    def update(self, n: float | None = 1) -> bool | None:
+        """Records a step."""
+        self.advanced += int(n or 0)
+        return True
+
+    def close(self) -> None:
+        """Does nothing; there is no terminal to give back."""
+
+
 #: About 200 KB that will not compress, then 2 MB that compresses to almost nothing:
 #: a few hundred KB on the wire that decode to 2.2 MB.
 COMPRESSIBLE_BODY = random.Random(0).randbytes(200_000) + b"\0" * 2_000_000
@@ -731,25 +753,25 @@ class TestProgressOnACompressedBody(_LocalServerTestCase):
 
     handler = _GzipBodyHandler
 
-    def test_the_bar_ends_at_one_hundred_percent(self) -> None:
+    def test_the_bar_is_advanced_by_exactly_its_total(self) -> None:
         """Test a compressed download does not run the bar past its total.
 
         Regression: the bar's total is the `Content-Length`, which counts the
         compressed bytes on the wire, but it was advanced by the decoded chunks,
-        so this body finished at about 1,100%.
+        so this body moved a bar of about 209 kB by 2.2 MB.
         """
-        stderr = io.StringIO()
+        _RecordingBar.instances.clear()
         with (
             patch.object(HTTPClient, "MIN_SIZE_FOR_PROGRESS", 1024),
+            patch("tqdm.tqdm", _RecordingBar),
             HTTPClient(show_progress=True) as client,
-            contextlib.redirect_stderr(stderr),
         ):
             response = client.get(f"{self.base_url}/")
 
         self.assertEqual(response.content, COMPRESSIBLE_BODY, "the body is decoded")
-        percentages = [int(p) for p in re.findall(r"(\d+)%", stderr.getvalue())]
-        self.assertTrue(percentages, "a bar is drawn")
-        self.assertEqual(max(percentages), 100, stderr.getvalue())
+        (bar,) = _RecordingBar.instances
+        self.assertEqual(bar.total, len(GZIPPED_BODY))
+        self.assertEqual(bar.advanced, bar.total)
 
 
 CHUNKED_BODY = b"snaffle!" * 40_000
@@ -786,17 +808,18 @@ class TestProgressOnAChunkedBody(_LocalServerTestCase):
         chunked body, so trusting it froze the bar at 0%. The same happens for a
         response served by a caching session.
         """
-        stderr = io.StringIO()
+        _RecordingBar.instances.clear()
         with (
             patch.object(HTTPClient, "MIN_SIZE_FOR_PROGRESS", 1024),
+            patch("tqdm.tqdm", _RecordingBar),
             HTTPClient(show_progress=True) as client,
-            contextlib.redirect_stderr(stderr),
         ):
             response = client.get(f"{self.base_url}/")
 
         self.assertEqual(response.content, CHUNKED_BODY)
-        percentages = [int(p) for p in re.findall(r"(\d+)%", stderr.getvalue())]
-        self.assertEqual(max(percentages, default=None), 100, stderr.getvalue())
+        (bar,) = _RecordingBar.instances
+        self.assertEqual(bar.total, len(CHUNKED_BODY))
+        self.assertEqual(bar.advanced, bar.total)
 
 
 class _OversizedChunkLineHandler(_QuietHandler):
