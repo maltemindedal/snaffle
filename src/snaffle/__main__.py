@@ -5,6 +5,7 @@
 one exit that still happens elsewhere is argparse's `2` for a bad command line.
 """
 
+import contextlib
 import os
 import sys
 
@@ -23,8 +24,11 @@ def run() -> None:
     try:
         code = main()
         # Flush inside the try, so a closed pipe surfaces here instead of at
-        # interpreter shutdown, where it would become exit status 120.
-        sys.stdout.flush()
+        # interpreter shutdown, where it would become exit status 120. There may
+        # be nothing to flush: `sys.stdout` is None when descriptor 1 is closed.
+        flush = getattr(sys.stdout, "flush", None)
+        if flush is not None:
+            flush()
         sys.exit(code)
     except KeyboardInterrupt:
         print("\nOperation cancelled by user")
@@ -32,7 +36,8 @@ def run() -> None:
     except BrokenPipeError:
         # Point stdout at devnull so the flush Python makes on exit cannot fail
         # again. This is the recipe in the `signal` module's note on SIGPIPE.
-        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        with contextlib.suppress(AttributeError, OSError, ValueError):
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         sys.exit(1)
 
 

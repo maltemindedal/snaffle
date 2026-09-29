@@ -109,5 +109,53 @@ class TestBrokenPipe(unittest.TestCase):
                 self.assertEqual(result.stderr, "", "nothing may reach stderr")
 
 
+class TestUnusualStdout(unittest.TestCase):
+    """`run` must not depend on there being an ordinary stdout."""
+
+    @patch(CLI_MAIN, return_value=0)
+    def test_a_stdout_that_is_missing_or_cannot_flush_is_fine(
+        self, _: MagicMock
+    ) -> None:
+        """Test a closed descriptor (`sys.stdout` is None) or a bare object exits 0.
+
+        Regression: `run` flushed stdout to surface a closed pipe, which raised
+        `AttributeError` here where the code before it exited normally.
+        """
+        for name, stdout in (("closed", None), ("no flush", object())):
+            with (
+                self.subTest(stdout=name),
+                patch("sys.stdout", new=stdout),
+                self.assertRaises(SystemExit) as caught,
+            ):
+                run()
+
+            self.assertEqual(caught.exception.code, 0)
+
+    @patch(CLI_MAIN, side_effect=BrokenPipeError)
+    def test_a_broken_pipe_on_a_stream_without_a_descriptor_exits_one(
+        self, _: MagicMock
+    ) -> None:
+        """Test redirecting stdout to devnull is skipped when there is no descriptor."""
+        with (
+            patch("sys.stdout", new=io.StringIO()),
+            self.assertRaises(SystemExit) as caught,
+        ):
+            run()
+
+        self.assertEqual(caught.exception.code, 1)
+
+    @unittest.skipIf(sys.platform == "win32", "relies on POSIX file descriptors")
+    def test_help_with_stdout_closed_exits_zero(self) -> None:
+        """Test the real entry point with file descriptor 1 closed, as under pythonw."""
+        result = subprocess.run(
+            ["sh", "-c", 'exec "$0" "$@" >&-', sys.executable, "-m", "snaffle", "HELP"],
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

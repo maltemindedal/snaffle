@@ -46,13 +46,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response from a caching session, or a test double. The recipe for driving your own bar in the
   large-download guide had the same flaw and is corrected. The bar is on stderr;
   stdout is unchanged.
-- Piping the CLI into a reader that exits early, as in `snaffle GET URL | head -1`,
-  no longer prints a `BrokenPipeError` traceback. A large body raised one
-  (exit status `1`); a small body, still buffered when the CLI finished, failed
-  during interpreter shutdown with `Exception ignored ... BrokenPipeError` and
-  exit status `120`. Both now exit `1` with nothing on stderr, following the
-  recipe in the `signal` module documentation. Scripts that tested for `120`
-  must test for `1`.
+- Printing a response into a pipe whose reader has already exited, as in
+  `snaffle GET URL | head -1` when the reader quits first, no longer prints a
+  `BrokenPipeError` traceback. A large body raised one (exit status `1`); a small
+  body, still buffered when the CLI finished, failed during interpreter shutdown
+  with `Exception ignored ... BrokenPipeError` and exit status `120`. Both now
+  exit `1` with nothing on stderr, following the recipe in the `signal` module
+  documentation. Scripts that tested for `120` must test for `1`. `--help` is
+  handled by argparse and is unchanged. The entry point also copes with no
+  stdout at all (descriptor 1 closed), where the first version of this change
+  would have turned `snaffle HELP` from exit `0` into a traceback.
 - A JSON response nested too deeply for the parser no longer kills the CLI with
   a `RecursionError` traceback. The nesting exhausts Python's recursion limit,
   which is not a `ValueError`, so the plain-text fallback never ran and nothing

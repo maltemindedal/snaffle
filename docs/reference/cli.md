@@ -171,7 +171,7 @@ Response Body:
 | Code | Meaning |
 | --- | --- |
 | `0` | Request succeeded, help was printed, or the user pressed `Ctrl+C`. |
-| `1` | Invalid JSON body, malformed `-H` header, an argument value the client rejects (`-t 0`, since the timeout must be greater than zero), or any `HTTPClientError`, including a connection failure, non-2xx status, or timeout. Also output that cannot be written because the reader closed the pipe early, as with `head -1`, which prints nothing to stderr. |
+| `1` | Invalid JSON body, malformed `-H` header, an argument value the client rejects (`-t 0`, since the timeout must be greater than zero), or any `HTTPClientError`, including a connection failure, non-2xx status, or timeout. Also a response that cannot be printed because the reader closed the pipe early, which prints nothing to stderr. `--help` is handled by argparse and is not covered. |
 | `2` | argparse rejected the command line (unknown command, missing URL, a non-integer `-t`, `--progress` on a non-`GET`). |
 
 `0` and `1` are returned by `snaffle.cli.main`, which is where the whole mapping
