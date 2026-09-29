@@ -150,7 +150,11 @@ A successful request writes the status line, every response header, and the
 body. A JSON body is pretty-printed with 4-space indentation; other bodies are
 printed verbatim. An empty or whitespace-only body omits the `Response Body:`
 section. The whole response is assembled in memory and written to stdout in one
-call.
+call. A character that the encoding of stdout cannot represent, such as `→` when
+output is redirected on a system whose encoding is cp1252 or ASCII, is written as
+a backslash escape (`\u2192`) instead of failing the whole response. Characters
+it can represent are written as they are. On a terminal, control characters in
+text the server chose are escaped too; see the [security notes](#security-notes).
 
 ```
 Status Code: 200

@@ -18,8 +18,17 @@ def run() -> None:
     `Ctrl+C` is the one outcome the CLI does not report as a return value; it
     is caught here and reported as a clean exit `0`. A reader that exits early,
     as in `snaffle GET url | head`, closes the pipe under the CLI's output; that
-    is reported as exit `1` without a traceback.
+    is reported as exit `1` without a traceback. Text that stdout cannot encode is
+    written with backslash escapes rather than failing.
     """
+
+    # A response can hold a character the encoding of stdout cannot represent,
+    # such as an arrow when redirected output is cp1252 or ASCII. Show it
+    # escaped, so the request that succeeded is not reported as an error.
+    reconfigure = getattr(sys.stdout, "reconfigure", None)
+    if reconfigure is not None:
+        with contextlib.suppress(OSError, ValueError):
+            reconfigure(errors="backslashreplace")
 
     try:
         code = main()

@@ -60,6 +60,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A response containing a character that the encoding of stdout cannot represent
+  no longer turns a successful request into an error. Writing the response raised
+  `UnicodeEncodeError`, so nothing was printed and the exit status was `1`
+  (`Error: 'charmap' codec can't encode character ...`) although the server had
+  answered `200`. This is what redirected output does by default on Windows, and
+  what `PYTHONIOENCODING=ascii` does anywhere. The entry point now configures
+  stdout to write such characters as backslash escapes, `\u2192`, and everything
+  the encoding can represent is unchanged. The same applied to an `Error:` line
+  that names a URL with such a character, which raised a traceback.
 - The large-download guide claimed that letting `requests` read a `GET` body in
   one pass is faster than draining it. It is not, for bodies of about 1 MiB and
   up: `requests` reads in 10 KiB chunks where the progress path reads

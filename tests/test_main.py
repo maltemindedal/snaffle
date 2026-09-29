@@ -6,8 +6,13 @@ import io
 import os
 import subprocess
 import sys
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 from unittest.mock import MagicMock, patch
+
+from typing_extensions import override
 
 from snaffle.__main__ import run
 
@@ -154,6 +159,67 @@ class TestUnusualStdout(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+
+class _Utf8Handler(BaseHTTPRequestHandler):
+    """Serves a UTF-8 text body that no ASCII stdout can represent."""
+
+    protocol_version = "HTTP/1.1"
+
+    @override
+    def log_message(self, format: str, *args: Any) -> None:
+        """Discards the per-request log line."""
+
+    def do_GET(self) -> None:
+        """Answers with `caf\u00e9 \u2192 \u65e5\u672c`."""
+        body = "caf\u00e9 \u2192 \u65e5\u672c".encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+class TestStdoutEncoding(unittest.TestCase):
+    """The response must survive a stdout that cannot encode all of it."""
+
+    def _snaffle(self, *args: str) -> subprocess.CompletedProcess[str]:
+        """Runs the real entry point with an ASCII-only stdout."""
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONUTF8"}
+        env["PYTHONIOENCODING"] = "ascii"
+        return subprocess.run(
+            [sys.executable, "-m", "snaffle", *args],
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+
+    def test_a_body_stdout_cannot_encode_is_shown_with_escapes(self) -> None:
+        """Test the request that succeeded is not turned into an error.
+
+        Regression: one character outside the stdout encoding raised
+        `UnicodeEncodeError` while the whole response was being written, so
+        nothing was printed and the exit code was 1, although the server had
+        answered 200. This is the default on Windows for redirected output.
+        """
+        server = ThreadingHTTPServer(("127.0.0.1", 0), _Utf8Handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+
+        result = self._snaffle("GET", f"http://127.0.0.1:{server.server_address[1]}/")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("Status Code: 200", result.stdout)
+        self.assertIn("caf\\xe9 \\u2192 \\u65e5\\u672c", result.stdout)
+
+    def test_an_error_naming_a_non_ascii_url_still_prints(self) -> None:
+        """Test the `Error:` line survives a URL stdout cannot encode."""
+        result = self._snaffle("GET", "http://127.0.0.1:9/caf\u00e9", "-t", "2")
+
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertTrue(result.stdout.startswith("Error:"), result.stdout)
         self.assertNotIn("Traceback", result.stderr)
 
 
