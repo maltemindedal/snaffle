@@ -17,6 +17,8 @@ src/snaffle/        The package. src-layout, so tests run against the
   http_client.py    The HTTP client, session pooling, and retry policy.
   _download.py      Private. The progress-bar download: whether to drain a
                     body, the size threshold, and the buffering.
+  _terminal.py      Private. Escapes control characters in server-chosen text
+                    when stdout is a terminal.
   exceptions.py     Exception hierarchy.
   py.typed          PEP 561 marker.
 tests/              One test module per source module: test_<module>.py.

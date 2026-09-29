@@ -10,10 +10,21 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+from typing_extensions import override
+
 from snaffle.cli import EXAMPLES, main
 from snaffle.exceptions import HTTPClientError
 
 MAKE_REQUEST = "snaffle.http_client.HTTPClient.make_request"
+
+
+class _Terminal(io.StringIO):
+    """A stdout that reports being a terminal."""
+
+    @override
+    def isatty(self) -> bool:
+        """Says this is a terminal."""
+        return True
 
 
 class TestCLI(unittest.TestCase):
@@ -177,6 +188,58 @@ class TestCLI(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertIn("Error: Connection error occurred", fake_stdout.getvalue())
+
+    @patch(MAKE_REQUEST)
+    def test_a_hostile_response_cannot_drive_a_terminal(
+        self, mock_request: MagicMock
+    ) -> None:
+        """Test control characters from the server are escaped on a terminal.
+
+        A server chooses the header values and a text body. On a terminal they
+        could retitle the window, clear or rewrite the screen, or write the
+        clipboard, so the raw escape is never written there.
+        """
+        mock_request.return_value = self._build_response(
+            text="hello \x1b[2J\x1b]0;pwned\x07 world",
+            headers={"content-type": "text/plain", "x-evil": "\x1b[31mred\r\x9b"},
+        )
+
+        with patch("sys.stdout", new=_Terminal()) as terminal:
+            exit_code = main(["GET", "https://api.example.com"])
+
+        output = terminal.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("\x1b", output)
+        self.assertNotIn("\x07", output)
+        self.assertIn("x-evil: \\x1b[31mred\\x0d\\x9b", output)
+        self.assertIn("hello \\x1b[2J\\x1b]0;pwned\\x07 world", output)
+
+    @patch(MAKE_REQUEST)
+    def test_the_same_response_is_written_untouched_when_piped(
+        self, mock_request: MagicMock
+    ) -> None:
+        """Test output that is not a terminal keeps every byte the server sent."""
+        mock_request.return_value = self._build_response(
+            text="hello \x1b[2J world", headers={"x-evil": "\x1b[31mred"}
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+            main(["GET", "https://api.example.com"])
+
+        self.assertIn("x-evil: \x1b[31mred", fake_stdout.getvalue())
+        self.assertIn("hello \x1b[2J world", fake_stdout.getvalue())
+
+    @patch(
+        MAKE_REQUEST, side_effect=HTTPClientError("HTTP error occurred: 500 \x1b[2J")
+    )
+    def test_an_error_message_cannot_drive_a_terminal(self, _: MagicMock) -> None:
+        """Test the `Error:` line, which carries the server's reason phrase, is safe."""
+        with patch("sys.stdout", new=_Terminal()) as terminal:
+            exit_code = main(["GET", "https://api.example.com"])
+
+        self.assertEqual(exit_code, 1)
+        self.assertNotIn("\x1b", terminal.getvalue())
+        self.assertIn("500 \\x1b[2J", terminal.getvalue())
 
     def test_usage_line_is_stable_across_entry_points(self) -> None:
         """Test help output names the command, not whatever launched it."""

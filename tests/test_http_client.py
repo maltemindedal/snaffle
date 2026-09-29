@@ -359,6 +359,35 @@ class TestVerboseOutput(unittest.TestCase):
         self.assertEqual(mock_request.call_args.kwargs["cookies"], {"sid": "abc123"})
 
 
+class _Terminal(io.StringIO):
+    """A stdout that reports being a terminal."""
+
+    @override
+    def isatty(self) -> bool:
+        """Says this is a terminal."""
+        return True
+
+
+class TestVerboseErrorsOnATerminal(unittest.TestCase):
+    """The exception text `verbose` prints can come from the server."""
+
+    def test_a_server_chosen_error_cannot_drive_a_terminal(self) -> None:
+        """Test control characters in a failure are escaped on the verbose lines."""
+        hostile = requests.exceptions.HTTPError("500 Server Error: \x1b]0;pwned\x07")
+        terminal = _Terminal()
+
+        with (
+            patch(SESSION_REQUEST, side_effect=hostile),
+            patch("sys.stdout", new=terminal),
+            HTTPClient(verbose=True) as client,
+            self.assertRaises(ResponseError),
+        ):
+            client.get("http://example.test/")
+
+        self.assertNotIn("\x1b", terminal.getvalue())
+        self.assertIn("\\x1b]0;pwned\\x07", terminal.getvalue())
+
+
 class TestSessionReuse(unittest.TestCase):
     """Test cases covering connection pooling and lifecycle."""
 
