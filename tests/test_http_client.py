@@ -740,6 +740,53 @@ class TestProgressOnACompressedBody(_LocalServerTestCase):
         self.assertEqual(max(percentages), 100, stderr.getvalue())
 
 
+CHUNKED_BODY = b"snaffle!" * 40_000
+
+
+class _ChunkedWithLengthHandler(_QuietHandler):
+    """Sends a chunked body that also carries a `Content-Length` for the same bytes.
+
+    RFC 9112 forbids the pair, but servers send it, and urllib3 reads the body as
+    chunked without ever advancing `raw.tell()`.
+    """
+
+    def do_GET(self) -> None:
+        """Answers with 320,000 bytes in 64,000-byte chunks."""
+        self.send_response(200)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("Content-Length", str(len(CHUNKED_BODY)))
+        self.end_headers()
+        for start in range(0, len(CHUNKED_BODY), 64_000):
+            chunk = CHUNKED_BODY[start : start + 64_000]
+            self.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
+        self.wfile.write(b"0\r\n\r\n")
+
+
+class TestProgressOnAChunkedBody(_LocalServerTestCase):
+    """The bar still moves when the transport cannot say how far the wire has got."""
+
+    handler = _ChunkedWithLengthHandler
+
+    def test_the_bar_falls_back_to_decoded_bytes(self) -> None:
+        """Test a body whose `raw.tell()` never moves still fills the bar.
+
+        Regression for the wire-byte counting: `raw.tell()` stays at zero for a
+        chunked body, so trusting it froze the bar at 0%. The same happens for a
+        response served by a caching session.
+        """
+        stderr = io.StringIO()
+        with (
+            patch.object(HTTPClient, "MIN_SIZE_FOR_PROGRESS", 1024),
+            HTTPClient(show_progress=True) as client,
+            contextlib.redirect_stderr(stderr),
+        ):
+            response = client.get(f"{self.base_url}/")
+
+        self.assertEqual(response.content, CHUNKED_BODY)
+        percentages = [int(p) for p in re.findall(r"(\d+)%", stderr.getvalue())]
+        self.assertEqual(max(percentages, default=None), 100, stderr.getvalue())
+
+
 class _OversizedChunkLineHandler(_QuietHandler):
     """Answers with a chunked body whose size line is padded past 64 KiB."""
 
