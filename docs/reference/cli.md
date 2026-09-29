@@ -156,8 +156,9 @@ body omits the `Response Body:`
 section. The whole response is assembled in memory and written to stdout in one
 call. A character that the encoding of stdout cannot represent, such as `→` when
 output is redirected on a system whose encoding is cp1252 or ASCII, is written as
-a backslash escape (`\u2192`) instead of failing the whole response. Characters
-it can represent are written as they are. On a terminal, control characters in
+a backslash escape (`\u2192`) instead of failing the whole response, unless you
+chose another handler, such as `PYTHONIOENCODING=ascii:replace`, which is kept.
+Characters it can represent are written as they are. On a terminal, control characters in
 text the server chose are escaped too; see the [security notes](#security-notes).
 
 ```
