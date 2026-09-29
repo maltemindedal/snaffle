@@ -82,6 +82,38 @@ compressed, `iter_content` yields more than that, so `len(chunk)` would run the
 bar past 100%. `response.raw.tell()` is how many bytes have been read off the
 wire, which is what the total measures.
 
+## Limit how much you read
+
+Snaffle does not limit the size of a response. Both reads, the plain one and the
+one that feeds the progress bar, hold the whole decoded body in memory, and
+`Content-Length` is no bound on it: a compressed response decodes to many times
+what was sent. A 299 KiB gzip response that decodes to 300 MiB took 314 MiB of
+memory and about 3.5 seconds to read. Brotli and Zstandard, which the
+[`speedups` extra](#make-large-text-responses-smaller) enables, compress just as
+well. Talk to a server you do not trust with a cap of your own. Stream the body
+and stop reading when it grows past what you will accept; `iter_content` yields
+decoded bytes, so the cap applies to the size after decompression:
+
+```python
+from snaffle import HTTPClient
+
+LIMIT = 10 * 1024 * 1024
+
+with HTTPClient() as client:
+    response = client.get(url, stream=True)
+    body = bytearray()
+    try:
+        for chunk in response.iter_content(chunk_size=65536):
+            body += chunk
+            if len(body) > LIMIT:
+                raise ValueError(f"response is larger than {LIMIT} bytes")
+    finally:
+        response.close()
+```
+
+The same response stops after 10 MiB in a few hundredths of a second with no extra
+memory. The command line has no such option.
+
 ## What `show_progress=True` does
 
 Setting `show_progress=True` on the client (or passing `--progress` on the CLI)

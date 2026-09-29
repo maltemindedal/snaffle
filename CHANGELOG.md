@@ -241,6 +241,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A section in the large-download guide, "Limit how much you read", and a line in
+  the CLI reference's security notes. Nothing bounds the size of a response, and
+  a compressed body can decode to far more than was sent: a 299 KiB gzip response
+  that decodes to 300 MiB took 314 MiB of memory to read. The guide gives a
+  recipe that streams the body and stops at a limit of your choice, which stopped
+  that response after 10 MiB with no extra memory. No option was added.
 - A "Security notes" section in the CLI reference, documenting behaviors that
   come from `requests` and that surprise people who put credentials on the
   command line: a `~/.netrc` entry overrides `-H "Authorization: ..."`, redirects

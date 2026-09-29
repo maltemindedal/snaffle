@@ -214,6 +214,11 @@ Some of them surprise people who put credentials on the command line.
   is not a terminal, a pipe or a file, nothing is changed and every byte the
   server sent is written. A body that is JSON is re-serialized, which already
   escapes control characters.
+- **Response size.** Nothing limits how large a response can be, and a small
+  compressed one can decode to hundreds of megabytes. A server you do not trust
+  can use that to exhaust your memory. There is no option for it on the command
+  line; the Python API can cap what it reads, see
+  [Limit how much you read](../guides/downloading-large-files.md#limit-how-much-you-read).
 - **Secrets on the command line.** Values passed with `-H` and `-d` are visible
   in your shell history and, while the command runs, in the process list.
 - **Verbose output.** `-v` prints the request's headers and JSON body and the
