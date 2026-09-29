@@ -31,7 +31,7 @@ and `urllib3`. There is no database, queue, or service. The artifact is a wheel.
 | `cli.py` | Argument parsing, header and body parsing, response rendering, error-to-exit-code mapping. Imports `HTTPClient` only after the help paths have been ruled out. |
 | `http_client.py` | The client: session construction, retry policy, method validation, exception translation. Asks `_download` whether to buffer a body, and hands it the body when the answer is yes. |
 | `_download.py` | Private. Owns the progress-bar download whole: whether to drain, the size threshold, the deferred `tqdm` import, the chunk loop, and writing the buffer back onto the response. |
-| `_terminal.py` | Private. Escapes control characters in text the server chose (headers, a text body, error messages) when stdout is a terminal, so a response cannot drive it. Imports only `re` and `sys`. |
+| `_terminal.py` | Private. Escapes control characters in text the server chose (headers, a text body, error messages) when stdout is a terminal, so a response cannot drive it. Imports only `sys`. |
 | `exceptions.py` | Three exception classes. No dependencies, not even on `requests`. |
 
 The run-time dependency graph is acyclic and shallow. `exceptions` and
