@@ -74,9 +74,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   which `requests` turns into a `ConnectionError`. Only a `POST` or `PATCH`,
   which is never replayed after a read failure, reaches `HTTPClientError`. So a
   server that accepts a connection and then stops answering makes a `GET` report
-  `Error: Failed to connect to ...`. Behaviour is unchanged; the API reference,
-  the library guide and the troubleshooting page now describe it, and tests pin
-  the mapping for every method.
+  `Error: Failed to connect to ...`. A stall after the headers, part-way through
+  the body, is different: `requests` raises `ConnectionError` from the body read
+  for every method, `POST` and `PATCH` included, after one attempt, and that is
+  an `HTTPConnectionError` without a retry. Behaviour is unchanged; the API
+  reference, the library guide and the troubleshooting page now describe both,
+  and tests pin the mapping for every method and a stalled body for two.
 - A response containing a character that the encoding of stdout cannot represent
   no longer turns a successful request into an error. Writing the response raised
   `UnicodeEncodeError`, so nothing was printed and the exit status was `1`
