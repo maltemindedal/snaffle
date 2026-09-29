@@ -60,6 +60,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The documentation said a read timeout is an `HTTPClientError`. For `GET`, `HEAD`,
+  `PUT`, `DELETE` and `OPTIONS` it is an `HTTPConnectionError`: urllib3 retries
+  the read timeout and, when the attempts are spent, raises `MaxRetryError`,
+  which `requests` turns into a `ConnectionError`. Only a `POST` or `PATCH`,
+  which is never replayed after a read failure, reaches `HTTPClientError`. So a
+  server that accepts a connection and then stops answering makes a `GET` report
+  `Error: Failed to connect to ...`. Behaviour is unchanged; the API reference,
+  the library guide and the troubleshooting page now describe it, and tests pin
+  the mapping for every method.
 - A response containing a character that the encoding of stdout cannot represent
   no longer turns a successful request into an error. Writing the response raised
   `UnicodeEncodeError`, so nothing was printed and the exit status was `1`
@@ -146,9 +155,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the adapter is built with `raise_on_status=False`, so the last response is
   reported rather than discarded. And a connect timeout raises
   `HTTPConnectionError`, not `HTTPClientError`, because
-  `requests.exceptions.ConnectTimeout` subclasses `ConnectionError`. Only read
-  timeouts reach `HTTPClientError`. Behaviour is unchanged; the documentation
-  now matches it.
+  `requests.exceptions.ConnectTimeout` subclasses `ConnectionError`. Behaviour is
+  unchanged; the documentation now matches it.
 - `HTTPClient.allowed_methods` is now the attribute method validation
   reads. It was assigned in `__init__` and documented, but every request
   checked the `ALLOWED_METHODS` class constant instead, so the instance
