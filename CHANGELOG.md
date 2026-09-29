@@ -7,8 +7,168 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- The `urllib3` floor is now 2.8.0, which fixes three advisories. Two can be
+  reached by a hostile server through any response snaffle reads:
+  `GHSA-vxq7-64xx-v4gw` (a chunk-size line of unbounded length was buffered in
+  memory; one response pushed a client's memory use up by more than 500 MiB) and
+  `GHSA-gh4c-6fx4-qh6g` (chunked `deflate` streaming could loop forever). The
+  third, `GHSA-8988-9cw3-xx77`, is about the TLS settings for an HTTPS proxy
+  being ignored. It matters only when `HTTPS_PROXY` points at an `https://`
+  proxy, and urllib3 warns that a setup which relied on the old behavior may need
+  changes. A response with an oversized chunk-size line now fails as
+  `HTTPClientError`. urllib3 2.8.0 also parses URLs more strictly: a host
+  containing a raw space, a control character or a percent-encoded control
+  character is rejected while parsing, so `http://exa mple.com/` now raises
+  `HTTPClientError` ("Request failed: ...") instead of `HTTPConnectionError`
+  after a failed DNS lookup, and some malformed-URL messages read differently.
+  Header values that were folded over several lines are now joined with spaces.
+  The exit code of the CLI is `1` either way.
+- A server can no longer drive your terminal through the CLI's output. Headers, a
+  plain-text body and the reason phrase in an error message are chosen by the
+  server, and written raw to a terminal an escape sequence in them can retitle
+  the window, clear or rewrite the screen (to forge output), or write to the
+  clipboard where the terminal allows it. When stdout is a terminal, the CLI now
+  shows control characters in that text as `\xNN`: C0 and C1 controls, DEL, and a
+  carriage return that does not start a CRLF. Tab, newline and CRLF are kept.
+  This covers the response, the `Error:` line and the exception lines that `-v`
+  prints. Output that is not a terminal, a pipe or a file, is unchanged byte for
+  byte, so scripts see what the server sent. A response that deliberately
+  contains colour codes now shows them as text on a terminal.
+- `--verbose` (and `HTTPClient(verbose=True)`) no longer prints credentials. It
+  wrote the whole request to stdout, so a bearer token passed with `-H`, a
+  cookie, or a password in `auth=` ended up in bug reports, CI logs and, with
+  `> file`, in the saved response. The values of the `Authorization`,
+  `Proxy-Authorization` and `Cookie` request headers, matched without regard to
+  case and whether the name is `str` or `bytes`, and of the `auth`, `cookies` and
+  `proxies` arguments are now shown as `<redacted>`, and the request still
+  carries the real values. Nothing else changes: the JSON body, `data`,
+  `params`, other headers (`X-Api-Key` included), the URL and the response's
+  headers are printed as before, so a password inside a `-d` body or a
+  `Set-Cookie` from the server is still visible.
+- A `Retry-After` header is now honoured for at most two minutes per retry. urllib3
+  allows six hours, so a server, or a misconfigured proxy, that answered a `GET`,
+  `HEAD`, `PUT`, `DELETE` or `OPTIONS` with a retryable status and
+  `Retry-After: 99999` held a client with the default three attempts for twelve
+  hours, silently: `--timeout` does not bound the sleep and `-v` prints nothing
+  during it. A server that asks for longer is now waited on for two minutes.
+- The `tqdm` floor is now 4.66.3. 4.66.0 to 4.66.2 are affected by
+  `GHSA-g7vv-2v7x-gj9p` (`CVE-2024-34062`, low severity, argument injection in
+  the `python -m tqdm` command line). snaffle only calls the `tqdm()` API, so it
+  was not reachable, but a floor should not admit a version with a published
+  advisory.
+
 ### Fixed
 
+- The documentation said every keyword argument passes straight through to
+  `requests.Session.request`. `timeout` does not: the client sets it, so
+  `client.get(url, timeout=5)` raises `TypeError` (`got multiple values for
+  keyword argument 'timeout'`), as does passing `method` or `url` by keyword.
+  Behaviour is unchanged; the API reference, the library guide and the docstring
+  of `make_request` now say so, and that a different timeout means a client built
+  with it.
+- The documentation said a read timeout is an `HTTPClientError`. For `GET`, `HEAD`,
+  `PUT`, `DELETE` and `OPTIONS` it is an `HTTPConnectionError`: urllib3 retries
+  the read timeout and, when the attempts are spent, raises `MaxRetryError`,
+  which `requests` turns into a `ConnectionError`. Only a `POST` or `PATCH`,
+  which is never replayed after a read failure, reaches `HTTPClientError`. So a
+  server that accepts a connection and then stops answering makes a `GET` report
+  `Error: Failed to connect to ...`. A stall after the headers, part-way through
+  the body, is different: `requests` raises `ConnectionError` from the body read
+  for every method, `POST` and `PATCH` included, after one attempt, and that is
+  an `HTTPConnectionError` without a retry. Behaviour is unchanged; the API
+  reference, the library guide and the troubleshooting page now describe both,
+  and tests pin the mapping for every method and a stalled body for two.
+- A response containing a character that the encoding of stdout cannot represent
+  no longer turns a successful request into an error. Writing the response raised
+  `UnicodeEncodeError`, so nothing was printed and the exit status was `1`
+  (`Error: 'charmap' codec can't encode character ...`) although the server had
+  answered `200`. This is what redirected output does by default on Windows, and
+  what `PYTHONIOENCODING=ascii` does anywhere. The entry point now configures
+  stdout to write such characters as backslash escapes, `\u2192`, and everything
+  the encoding can represent is unchanged. The same applied to an `Error:` line
+  that names a URL with such a character, which raised a traceback. Only the
+  default handler, `strict`, is replaced: `PYTHONIOENCODING=ascii:replace` or
+  `:ignore`, and the `surrogateescape` that `LC_ALL=C` selects, are honoured as
+  before.
+- The large-download guide claimed that letting `requests` read a `GET` body in
+  one pass is faster than draining it. It is not, for bodies of about 1 MiB and
+  up: `requests` reads in 10 KiB chunks where the progress path reads
+  `DOWNLOAD_CHUNK_SIZE` (64 KiB), and against a local server the plain read was
+  roughly 1.5 to 2 times slower at 1 MiB and 10 MiB, and 5 to 13% slower at 100
+  KiB. The figures vary from run to run. The default is unchanged; the guide now gives the reason that does hold, which is that no
+  response is left streaming with nothing reading it.
+- The progress bar no longer runs past 100% for a compressed download. Its total
+  is the `Content-Length`, which counts the bytes the server sent, but it was
+  advanced by the length of each decoded chunk, so a gzip, deflate, Brotli or
+  Zstandard response of 5 MiB or more finished at several hundred percent and
+  tqdm dropped the total. It now advances by the bytes read off the wire
+  (`response.raw.tell()`), and falls back to the decoded length whenever that
+  position is missing or does not behave like a byte count: a chunked body, a
+  response from a caching session, or a test double. The recipe for driving your own bar in the
+  large-download guide had the same flaw and is corrected. The bar is on stderr;
+  stdout is unchanged.
+- Printing a response into a pipe whose reader has already exited, as in
+  `snaffle GET URL | head -1` when the reader quits first, no longer prints a
+  `BrokenPipeError` traceback. A large body raised one (exit status `1`); a small
+  body, still buffered when the CLI finished, failed during interpreter shutdown
+  with `Exception ignored ... BrokenPipeError` and exit status `120`. Both now
+  exit `1` with nothing on stderr, following the recipe in the `signal` module
+  documentation. Scripts that tested for `120` must test for `1`. `--help` is
+  handled by argparse and is unchanged. The entry point also copes with no
+  stdout at all (descriptor 1 closed), where the first version of this change
+  would have turned `snaffle HELP` from exit `0` into a traceback.
+- A JSON response nested too deeply for the parser no longer kills the CLI with
+  a `RecursionError` traceback. The nesting exhausts Python's recursion limit,
+  which is not a `ValueError`, so the plain-text fallback never ran and nothing
+  was printed, not even the status or headers. The body is now printed as text,
+  like any other body that is not valid JSON. A server chooses the body, so this
+  was remotely triggerable.
+- A JSON response whose indentation would be enormous is now printed as
+  received instead of being indented. `indent=4` starts every line with four
+  spaces per level of depth, so the output of a deeply nested body grows with
+  the square of the depth, and with its width as well: 5,000 levels wrote
+  100 MB, 990 levels holding 100,000 numbers turned a 202 KB body into 400 MB,
+  and on Python 3.14, which parses nesting without a practical limit, a 40 KB
+  body nested 20,000 levels needed several gigabytes and exhausted memory. A
+  server chooses the body, so this was remotely triggerable. The limit is
+  indentation above both 8 MiB and 64 times the size of the body; GeoJSON, which
+  nests deeply, indents to about six times its size. Python 3.10 to 3.12
+  already refused to print past about 1,000 levels.
+- A response whose `Content-Length` is not an integer, such as `abc` or a
+  duplicated header that urllib3 joins into `5, 5`, no longer makes a download
+  with `show_progress` fail. The progress path called `int()` on the header and
+  raised a bare `ValueError` before reading the body, although the same response
+  reads fine without `show_progress`. An unparsable length now reads as `0`, the
+  same as a missing one: the body is drained and no bar is drawn.
+- A host that urllib3 cannot encode, such as `http://a..b/` (an empty label) or
+  one with a label over 63 characters, no longer escapes `make_request` as a raw
+  `urllib3.exceptions.LocationParseError`. It raises `HTTPClientError`, as the
+  API reference already said a malformed URL does. The same held for a server
+  that redirects to such a host. The CLI still exits `1`; its message gains the
+  usual prefix, `Error: Request failed: Failed to parse: ...`. Code that caught
+  `ValueError` around a call to catch this case must catch `HTTPClientError`.
+- A `GET` with `show_progress` on that came back as a 4xx or 5xx no longer
+  leaves its connection checked out. The request is sent as `stream=True`, and
+  the error was raised without reading the body, so the socket stayed open until
+  the exception was garbage collected. A script that kept its `ResponseError`
+  objects held one socket per failure, and every failure lost connection reuse;
+  `client.close()` could not release them. The error body is now read before
+  the exception is raised, so `error.__cause__.response.text` still works. If
+  that read fails, because the body is truncated, undecodable or stalls until the
+  read timeout, the connection is closed and the `ResponseError` with the real
+  status is still raised, as before. A large error body is now read in full. A
+  caller who passes `stream=True` still gets the response unread.
+- The `speedups` extra now installs the codecs urllib3 actually loads. It named
+  `zstandard`, which urllib3 stopped using in 2.6.0, so on Python 3.10 to 3.13
+  the documented Zstandard negotiation never happened even with the extra
+  installed. The extra is now `brotli>=1.2.0` plus `backports-zstd>=1.0.0` on
+  Python before 3.14, where Zstandard is in the standard library. The floor for
+  `brotli` moves from 1.1 to 1.2.0 because older releases cannot bound
+  decompression (`GHSA-2qfp-q593-8484`, a decompression bomb). Anyone who
+  installed the extra and imported `zstandard` for their own use must now
+  depend on it directly.
 - The `-d`/`--data` help text no longer prints a literal `R|` prefix:
   `-d, --data DATA  R|JSON data for request body.` The marker belonged to a
   custom help formatter that was only ever attached to the top-level parser,
@@ -20,9 +180,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the adapter is built with `raise_on_status=False`, so the last response is
   reported rather than discarded. And a connect timeout raises
   `HTTPConnectionError`, not `HTTPClientError`, because
-  `requests.exceptions.ConnectTimeout` subclasses `ConnectionError`. Only read
-  timeouts reach `HTTPClientError`. Behaviour is unchanged; the documentation
-  now matches it.
+  `requests.exceptions.ConnectTimeout` subclasses `ConnectionError`. Behaviour is
+  unchanged; the documentation now matches it.
 - `HTTPClient.allowed_methods` is now the attribute method validation
   reads. It was assigned in `__init__` and documented, but every request
   checked the `ALLOWED_METHODS` class constant instead, so the instance
@@ -40,6 +199,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A download drained through the progress bar (`show_progress`) now holds the
+  body once in memory instead of twice at its peak, and finishes about a third
+  faster for large bodies. The chunks were collected in a list and then joined,
+  which built a second copy of the whole body; they are now written to an
+  `io.BytesIO`, whose buffer becomes the response body directly. The response is
+  identical: `.content`, `.text`, `.json()` and `iter_content` behave as before.
+  This affects library callers; the CLI's own peak is dominated by rendering the
+  text.
+- `HTTPClient.__enter__` is annotated as returning the type of the client it was
+  called on, not always `HTTPClient`. `with PatientClient() as client:`, the
+  subclassing pattern the library guide documents, now type-checks as
+  `PatientClient`, so a method the subclass adds is no longer reported as
+  missing. Annotation only; there is no change at run time.
+- The lock file now resolves requests 2.34.2, tqdm 4.70.1, certifi 2026.7.22,
+  idna 3.20 and charset-normalizer 3.5.1. Several of these change behavior.
+  requests 2.34 no longer collapses a leading `//` in the URL path, so
+  `http://host//a` is sent as `GET //a` where 2.33 sent `GET /a`; this fixes
+  some presigned URLs. It also stops matching `NO_PROXY` entries greedily, so
+  `NO_PROXY=example.com` no longer bypasses the proxy for `notexample.com`, and a
+  request that was reaching its host only through that accident now goes through
+  the proxy. certifi 2026.7.22 trusts 121 root certificates where 2026.2.25
+  trusted 137 (20 removed, 4 added), so a server chaining to one of the removed
+  roots no longer verifies. charset-normalizer 3.5 changed its charset
+  detection, which can change how a body with no declared charset is decoded.
+  These come from the releases, not from snaffle, so they apply to any install
+  that resolves those versions, with or without the lock file; the dependency
+  floors did not move, so older releases stay allowed, and the lock file only
+  makes the newer ones reproducible.
 - Relicensed from Apache-2.0 to MIT. The `license` field in `pyproject.toml`
   and the `LICENSE` file both carry the new terms; releases up to and including
   3.0.0 remain available under Apache-2.0.
@@ -72,6 +259,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A section in the large-download guide, "Limit how much you read", and a line in
+  the CLI reference's security notes. Nothing bounds the size of a response, and
+  a compressed body can decode to far more than was sent: a 299 KiB gzip response
+  that decodes to 300 MiB took 314 MiB of memory to read. The guide gives a
+  recipe that streams the body and stops at a limit of your choice, which stopped
+  that response after 10 MiB with no extra memory. No option was added.
+- A "Security notes" section in the CLI reference, documenting behaviors that
+  come from `requests` and that surprise people who put credentials on the
+  command line: a `~/.netrc` entry overrides `-H "Authorization: ..."`, redirects
+  drop `Authorization` but forward other custom headers to a new origin, secrets
+  on the command line are visible in history and the process list, and `-v`
+  shows every part of a request but the credential headers and arguments. Each
+  was checked against the locked `requests`.
 - ty as the project's type checker, with every rule at error level
   (`[tool.ty.rules] all = "error"`). It replaces mypy, whose `strict = true`
   configuration was the equivalent bar. Satisfying it added `@override`
@@ -102,6 +302,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `types-requests`, from the dev dependencies. requests has shipped its own
+  inline type annotations since 2.34.0, and the stubs package, frozen at
+  requests 2.33, takes precedence over them. Its PyPI page now says to
+  uninstall it. The dev group requires `requests>=2.34.2` in its place, so a
+  resolution without the lock file cannot lose the annotations. This
+  supersedes the note under mypy below that `types-requests` stays. The
+  annotations exposed one real error in the tests, an override that returned
+  the `ConnectionPool` base class where `HTTPConnectionPool` is expected; it is
+  fixed.
 - mypy, in favour of ty (see Added). The `[tool.mypy]` configuration is gone
   from `pyproject.toml`, including the `build/` and `dist/` excludes it needed.
   ty honours `.gitignore`, so build output is skipped without configuration.

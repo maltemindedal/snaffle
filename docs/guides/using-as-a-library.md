@@ -64,15 +64,19 @@ with HTTPClient() as client:
         # retried and never recovered arrives here too, carrying the real code.
         print(f"Server said no: {error}")
     except HTTPConnectionError as error:
-        # DNS failure, refused connection, or a connect timeout.
+        # DNS failure, refused connection, a connect timeout, a read timeout
+        # on a GET, HEAD, PUT, DELETE or OPTIONS once its retries are spent, or
+        # a server that went silent part-way through the body (any method).
         print(f"Could not reach it: {error}")
     except HTTPClientError as error:
-        # Anything else from requests -- a read timeout, too many redirects.
+        # Anything else -- a read timeout on a POST or PATCH before the response
+        # begins, too many redirects, a malformed URL.
         print(f"Request failed: {error}")
 ```
 
 Catch `HTTPClientError` alone if the distinction does not matter. The original
-`requests` exception is always on `__cause__`:
+original exception is always on `__cause__` (from `requests`, or from urllib3 for
+a host it cannot parse):
 
 ```python
 except ResponseError as error:
@@ -90,7 +94,9 @@ client.make_request("TRACE", url)  # ValueError: Unsupported HTTP method...
 ## Send bodies the CLI cannot
 
 Every keyword argument passes straight through to
-`requests.Session.request`, so every argument it accepts is available.
+`requests.Session.request`, so every argument it accepts is available, with one
+exception: `timeout` is set on the client (`HTTPClient(timeout=...)`), and
+passing it to a call raises `TypeError`.
 
 ```python
 with HTTPClient() as client:
@@ -132,7 +138,8 @@ with HTTPClient(timeout=60, retries=5) as client:
 `retries` counts *total attempts*, not retries after the first. `retries=1`
 means one attempt and no retry. Both arguments must be greater than zero.
 
-Retries carry a `backoff_factor` of 0.3 and honour `Retry-After`. Which
+Retries carry a `backoff_factor` of 0.3 and honour `Retry-After` for up to two
+minutes per retry. Which
 failures are retried depends on the method. A `POST` is never replayed once
 the request is on the wire. The table is in the
 [API reference](../reference/python-api.md#retry-behaviour); the reasoning is in

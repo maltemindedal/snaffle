@@ -92,7 +92,12 @@ with HTTPClient() as client:
 ## `Error: Failed to connect to ...`
 
 DNS failure, a refused connection, an unreachable host, or a timeout while the
-connection was still being established. Check the URL, then run with `-v` to
+connection was still being established. A server that accepted the connection
+and then stopped answering ends here too for a `GET`, `HEAD`, `PUT`, `DELETE` or
+`OPTIONS`, once its retries are spent: the read timeout is retried and then
+reported as a connection failure. So does one that sent the headers and then
+went silent part-way through the body, for every method, but that is not
+retried: the response was already under way. Check the URL, then run with `-v` to
 see exactly what was attempted and which `requests` exception was behind it.
 
 A connection failure is retried for every method, including `POST`: a request

@@ -74,8 +74,45 @@ with HTTPClient() as client:
     ):
         for chunk in response.iter_content(chunk_size=65536):
             handle.write(chunk)
-            bar.update(len(chunk))
+            bar.update(response.raw.tell() - bar.n)
 ```
+
+`Content-Length` counts the bytes the server sent. When the response is
+compressed, `iter_content` yields more than that, so `len(chunk)` would run the
+bar past 100%. `response.raw.tell()` is how many bytes have been read off the
+wire, which is what the total measures.
+
+## Limit how much you read
+
+Snaffle does not limit the size of a response. Both reads, the plain one and the
+one that feeds the progress bar, hold the whole decoded body in memory, and
+`Content-Length` is no bound on it: a compressed response decodes to many times
+what was sent. A 299 KiB gzip response that decodes to 300 MiB took 314 MiB of
+memory and about 3.5 seconds to read. Brotli and Zstandard, which the
+[`speedups` extra](#make-large-text-responses-smaller) enables, compress just as
+well. Talk to a server you do not trust with a cap of your own. Stream the body
+and stop reading when it grows past what you will accept; `iter_content` yields
+decoded bytes, so the cap applies to the size after decompression:
+
+```python
+from snaffle import HTTPClient
+
+LIMIT = 10 * 1024 * 1024
+
+with HTTPClient() as client:
+    response = client.get(url, stream=True)
+    body = bytearray()
+    try:
+        for chunk in response.iter_content(chunk_size=65536):
+            body += chunk
+            if len(body) > LIMIT:
+                raise ValueError(f"response is larger than {LIMIT} bytes")
+    finally:
+        response.close()
+```
+
+The same response stops after 10 MiB in a few hundredths of a second with no extra
+memory. The command line has no such option.
 
 ## What `show_progress=True` does
 
@@ -84,7 +121,7 @@ changes `GET` in three ways:
 
 1. The request is sent with `stream=True`.
 2. The body is drained through `iter_content` in `DOWNLOAD_CHUNK_SIZE` chunks,
-   updating the bar, and buffered into memory.
+   updating the bar by the bytes read off the wire, and buffered into memory.
 3. The buffer is attached to the response and marked consumed, so `.text` and
    `.json()` serve it rather than re-reading a drained socket.
 
@@ -97,14 +134,17 @@ reading it is what you asked to do yourself. See
 [Combine your own progress bar with streaming](#combine-your-own-progress-bar-with-streaming)
 for having both.
 
-Without `show_progress`, `GET` does not stream at all: letting `requests` read
-the body in one pass is faster and returns the connection to the pool
-immediately. See
+Without `show_progress`, `GET` does not stream at all: `requests` reads the body
+in one pass and returns the connection to the pool immediately, and no response
+is left streaming with nothing reading it. That read is not the faster one for
+large bodies. `requests` reads in 10 KiB chunks, so draining in
+`DOWNLOAD_CHUNK_SIZE` chunks is quicker from about 1 MiB up. See
 [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
 
 ## Make large text responses smaller
 
-The optional `speedups` extra installs `zstandard` and `brotli`. urllib3
+The optional `speedups` extra installs `brotli` and, before Python 3.14,
+`backports-zstd` (Python 3.14 ships Zstandard in the standard library). urllib3
 negotiates those content encodings automatically once the codecs are present,
 so large text and JSON responses arrive compressed:
 

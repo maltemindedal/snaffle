@@ -20,12 +20,15 @@ classifiers = [
     "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
 ]
-dependencies = ["requests>=2.33.1", "tqdm>=4.66.0", "urllib3>=2.7.0"]
+dependencies = ["requests>=2.33.1", "tqdm>=4.66.3", "urllib3>=2.8.0"]
 
 [project.optional-dependencies]
 # urllib3 negotiates these content encodings automatically once the codecs are
-# installed, so large text/JSON responses arrive materially smaller.
-speedups = ["zstandard>=0.23", "brotli>=1.1"]
+# installed, so large text/JSON responses arrive materially smaller. These are
+# the packages urllib3 itself loads: brotli older than 1.2.0 cannot bound
+# decompression, and Python 3.14 has zstd in the standard library, so
+# backports-zstd is only needed before it.
+speedups = ["brotli>=1.2.0", "backports-zstd>=1.0.0; python_version < '3.14'"]
 
 [project.scripts]
 # Points at `run`, not `cli:main`, so the console script gets the same
@@ -42,12 +45,15 @@ snaffle = ["py.typed"]
 
 [dependency-groups]
 dev = [
-    "ruff>=0.11.5,<0.12",
+    "ruff>=0.16.8,<0.17",
     "ty>=0.0.75",
-    "types-requests>=2.33.0,<3",
+    # requests ships inline type annotations since 2.34.0, and the types-requests
+    # stubs, which are frozen at 2.33, would shadow them. The floor keeps a
+    # resolution without the lock file from silently losing the annotations.
+    "requests>=2.34.2",
     # Tests need `override` at runtime; the project floor is 3.10 and
     # `typing.override` arrived in 3.12.
-    "typing-extensions>=4.4",
+    "typing-extensions>=4.6",
 ]
 
 [tool.ty.rules]
@@ -60,7 +66,16 @@ line-length = 88
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PERF"]
+# The families after the first row have no findings today and guard against
+# regressions: unused arguments, needless returns, os.path use, commented-out
+# code, blanket ignores, logging mistakes, builtin shadowing, implicit string
+# concatenation, leftover debugger calls, naive datetimes, and a few rarer
+# mistakes (SLOT, YTT, FLY, FA, ASYNC, PLE).
+select = [
+    "E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF", "PERF",
+    "ARG", "RET", "PTH", "ERA", "PGH", "LOG", "G", "A", "ISC", "SLOT", "T10",
+    "YTT", "FLY", "FA", "ASYNC", "DTZ", "PLE",
+]
 ignore = ["E501"]
 
 [tool.ruff.lint.isort]

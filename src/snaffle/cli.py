@@ -10,12 +10,14 @@ The HTTP client (and with it ``requests``) is imported lazily so that ``--help``
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 import textwrap
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
 
+from snaffle._terminal import for_stdout
 from snaffle.exceptions import HTTPClientError
 
 if TYPE_CHECKING:
@@ -120,6 +122,50 @@ def _parse_request_kwargs(args: argparse.Namespace) -> RequestKwargs:
     return kwargs
 
 
+# `json.dumps(indent=4)` starts every line with four spaces per level of depth,
+# so the indentation of a deeply nested body grows with the square of the depth
+# and, for a wide one, with its width as well. A server chooses the body, and a
+# 200 KB one can need 400 MB to print. JSON whose indentation would exceed both
+# this floor and this multiple of the body is printed as received. Real
+# documents stay far below it: GeoJSON, which nests deeply, indents to about six
+# times its size.
+_INDENT_FLOOR = 8 * 1024 * 1024
+_INDENT_RATIO = 64
+
+
+def _indent_exceeds(value: Any, budget: int) -> bool:
+    """Reports whether indenting `value` would write more than `budget` spaces.
+
+    Counts one indent per line, level by level, without building any of them.
+    """
+    spaces = 0
+    depth = 0
+    level = [value] if isinstance(value, (list, dict)) else []
+    while level:
+        depth += 1
+        spaces += 4 * depth * sum(map(len, level))
+        if spaces > budget:
+            return True
+        level = [
+            child
+            for node in level
+            for child in (node.values() if isinstance(node, dict) else node)
+            if isinstance(child, (list, dict))
+        ]
+    return False
+
+
+def _pretty(text: str) -> str:
+    """Returns `text` indented if it is JSON of sane size, else unchanged."""
+    # A body nested deeply enough to exhaust the parser raises `RecursionError`,
+    # which is not a `ValueError`.
+    with contextlib.suppress(ValueError, RecursionError):
+        value = json.loads(text)
+        if not _indent_exceeds(value, max(_INDENT_FLOOR, _INDENT_RATIO * len(text))):
+            return json.dumps(value, indent=4)
+    return text
+
+
 def _emit_response(response: requests.Response) -> None:
     """Prints a formatted HTTP response using a single buffered write."""
     parts = [f"Status Code: {response.status_code}\n", "\nHeaders:\n"]
@@ -128,13 +174,10 @@ def _emit_response(response: requests.Response) -> None:
     text = response.text
     if text.strip():
         parts.append("\nResponse Body:\n")
-        try:
-            parts.append(json.dumps(json.loads(text), indent=4))
-        except ValueError:
-            parts.append(text)
+        parts.append(_pretty(text))
         parts.append("\n")
 
-    sys.stdout.write("".join(parts))
+    sys.stdout.write(for_stdout("".join(parts)))
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
@@ -257,7 +300,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     except (ValueError, HTTPClientError) as error:
         # json.JSONDecodeError is a ValueError, so it must be caught above this.
-        print(f"Error: {error}")
+        print(for_stdout(f"Error: {error}"))
         return 1
 
     return 0
