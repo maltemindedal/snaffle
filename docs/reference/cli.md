@@ -216,9 +216,10 @@ Some of them surprise people who put credentials on the command line.
   DEL, and a carriage return that does not start a CRLF) are shown as `\xNN`
   instead of being obeyed; tab, newline and CRLF are kept. This applies to the
   response, to the `Error:` line and to the exception lines of `-v`. When stdout
-  is not a terminal, a pipe or a file, nothing is changed and every byte the
-  server sent is written. A body that is JSON is re-serialized, which already
-  escapes control characters.
+  is not a terminal, a pipe or a file, nothing is escaped and the output is what
+  it always was. That is the response as decoded and written in the encoding of
+  stdout, not the server's own bytes: a body that is JSON is re-serialized, which
+  already escapes control characters, and a Latin-1 body is written as UTF-8.
 - **Response size.** Nothing limits how large a response can be, and a small
   compressed one can decode to hundreds of megabytes. A server you do not trust
   can use that to exhaust your memory. There is no option for it on the command
