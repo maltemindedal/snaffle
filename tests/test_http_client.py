@@ -881,15 +881,24 @@ class _RequestLineRecorder(socketserver.StreamRequestHandler):
         )
 
 
+_REQUESTS_MINOR = tuple(int(part) for part in requests.__version__.split(".")[:2])
+#: requests 2.34 stopped collapsing a leading `//` in the path to `/`.
+REQUESTS_KEEPS_LEADING_SLASHES = _REQUESTS_MINOR >= (2, 34)
+
+
 class TestRequestTarget(unittest.TestCase):
     """What the client writes on the request line."""
 
+    @unittest.skipUnless(
+        REQUESTS_KEEPS_LEADING_SLASHES, "requests before 2.34 collapses a leading //"
+    )
     def test_duplicate_leading_slashes_are_sent_as_written(self) -> None:
         """Test `//a//b` reaches the server unchanged.
 
-        requests 2.34 stopped collapsing a leading `//` to `/`, which broke some
-        presigned URLs. The path is the caller's to choose, so it is sent as
-        given.
+        This is `requests` behavior, not snaffle's: 2.34 stopped collapsing a
+        leading `//` to `/`, which had broken some presigned URLs, and the
+        project's declared floor is older, so the test runs only where it holds.
+        The path is the caller's to choose, so it is sent as given.
         """
         _RequestLineRecorder.lines.clear()
         server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _RequestLineRecorder)
