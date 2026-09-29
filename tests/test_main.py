@@ -162,6 +162,9 @@ class TestUnusualStdout(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
 
 
+_PROXY_VARIABLES = frozenset({"http_proxy", "https_proxy", "all_proxy"})
+
+
 class _Utf8Handler(BaseHTTPRequestHandler):
     """Serves a UTF-8 text body that no ASCII stdout can represent."""
 
@@ -187,8 +190,17 @@ class TestStdoutEncoding(unittest.TestCase):
     def _snaffle(
         self, *args: str, encoding: str = "ascii"
     ) -> subprocess.CompletedProcess[str]:
-        """Runs the real entry point with a stdout of the given encoding."""
-        env = {k: v for k, v in os.environ.items() if k != "PYTHONUTF8"}
+        """Runs the real entry point with a stdout of the given encoding.
+
+        The machine's proxy settings are dropped, as `test_http_client` does for
+        its own tests: the child talks to a server on the loopback interface, and
+        through a proxy that request fails for reasons that are not under test.
+        """
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k != "PYTHONUTF8" and k.lower() not in _PROXY_VARIABLES
+        }
         env["PYTHONIOENCODING"] = encoding
         return subprocess.run(
             [sys.executable, "-m", "snaffle", *args],
