@@ -7,6 +7,7 @@ of paying for a fresh handshake each time.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from types import TracebackType
 from typing import Any, Protocol, TypeVar
 
@@ -23,6 +24,33 @@ __all__ = ["HTTPClient", "ProgressBar"]
 #: Lets `__enter__` return the type of a subclass. `typing.Self` needs Python 3.11
 #: and this package supports 3.10.
 _ClientT = TypeVar("_ClientT", bound="HTTPClient")
+
+
+#: Request headers whose values `verbose` never prints.
+_SECRET_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie"})
+#: Keyword arguments whose values are credentials, and are never printed.
+_SECRET_KWARGS = ("auth", "cookies")
+
+
+def _redacted(kwargs: Mapping[str, Any]) -> dict[str, Any]:
+    """Returns a copy of `kwargs` that is safe to print, for `verbose` output.
+
+    The values of the credential headers and of the `auth` and `cookies`
+    arguments are replaced by `<redacted>`. Nothing else changes: the JSON body,
+    the other headers and the URL are shown as given, and the request that is
+    sent still carries the real values.
+    """
+    shown = dict(kwargs)
+    for name in _SECRET_KWARGS:
+        if name in shown:
+            shown[name] = "<redacted>"
+    headers = shown.get("headers")
+    if isinstance(headers, Mapping):
+        shown["headers"] = {
+            key: "<redacted>" if str(key).lower() in _SECRET_HEADERS else value
+            for key, value in headers.items()
+        }
+    return shown
 
 
 class ProgressBar(Protocol):
@@ -234,7 +262,8 @@ class HTTPClient:
 
         if verbose:
             print(
-                f"[VERBOSE] Sending {normalized_method} request to {url} with {kwargs}"
+                f"[VERBOSE] Sending {normalized_method} request to {url} "
+                f"with {_redacted(kwargs)}"
             )
 
         try:
