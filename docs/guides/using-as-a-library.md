@@ -93,7 +93,9 @@ client.make_request("TRACE", url)  # ValueError: Unsupported HTTP method...
 ## Send bodies the CLI cannot
 
 Every keyword argument passes straight through to
-`requests.Session.request`, so every argument it accepts is available.
+`requests.Session.request`, so every argument it accepts is available, with one
+exception: `timeout` is set on the client (`HTTPClient(timeout=...)`), and
+passing it to a call raises `TypeError`.
 
 ```python
 with HTTPClient() as client:

@@ -136,6 +136,12 @@ sets `stream=True` when it is going to feed a progress bar, sends the request
 with the client's `timeout`, calls `raise_for_status()`, and translates
 `requests` exceptions into this package's hierarchy.
 
+Every other keyword argument is passed to `requests.Session.request`. `timeout`
+is the exception: it is set once, on the client, and passing it to a call raises
+`TypeError` (`got multiple values for keyword argument 'timeout'`), as does
+`method` or `url` by keyword. To use a different timeout for a request, build a
+client with that `timeout`.
+
 When progress tracking is active it drains the body into `response._content` and
 marks it consumed, so `.text` and `.json()` serve the buffer rather than
 re-reading a drained socket.

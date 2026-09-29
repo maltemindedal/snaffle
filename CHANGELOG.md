@@ -60,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The documentation said every keyword argument passes straight through to
+  `requests.Session.request`. `timeout` does not: the client sets it, so
+  `client.get(url, timeout=5)` raises `TypeError` (`got multiple values for
+  keyword argument 'timeout'`), as does passing `method` or `url` by keyword.
+  Behaviour is unchanged; the API reference, the library guide and the docstring
+  of `make_request` now say so, and that a different timeout means a client built
+  with it.
 - The documentation said a read timeout is an `HTTPClientError`. For `GET`, `HEAD`,
   `PUT`, `DELETE` and `OPTIONS` it is an `HTTPConnectionError`: urllib3 retries
   the read timeout and, when the attempts are spent, raises `MaxRetryError`,
