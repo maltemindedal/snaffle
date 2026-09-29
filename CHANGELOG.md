@@ -41,11 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cookie, or a password in `auth=` ended up in bug reports, CI logs and, with
   `> file`, in the saved response. The values of the `Authorization`,
   `Proxy-Authorization` and `Cookie` request headers, matched without regard to
-  case, and of the `auth` and `cookies` arguments are now shown as `<redacted>`,
-  and the request still carries the real values. Nothing else changes: the JSON
-  body, other headers, the URL and the response's headers are printed as before,
-  so a password inside a `-d` body or a `Set-Cookie` from the server is still
-  visible.
+  case and whether the name is `str` or `bytes`, and of the `auth`, `cookies` and
+  `proxies` arguments are now shown as `<redacted>`, and the request still
+  carries the real values. Nothing else changes: the JSON body, `data`,
+  `params`, other headers (`X-Api-Key` included), the URL and the response's
+  headers are printed as before, so a password inside a `-d` body or a
+  `Set-Cookie` from the server is still visible.
 - A `Retry-After` header is now honoured for at most two minutes per retry. urllib3
   allows six hours, so a server, or a misconfigured proxy, that answered a `GET`,
   `HEAD`, `PUT`, `DELETE` or `OPTIONS` with a retryable status and
@@ -263,7 +264,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command line: a `~/.netrc` entry overrides `-H "Authorization: ..."`, redirects
   drop `Authorization` but forward other custom headers to a new origin, secrets
   on the command line are visible in history and the process list, and `-v`
-  prints credentials unredacted. Each was checked against the locked `requests`.
+  shows every part of a request but the credential headers and arguments. Each
+  was checked against the locked `requests`.
 - ty as the project's type checker, with every rule at error level
   (`[tool.ty.rules] all = "error"`). It replaces mypy, whose `strict = true`
   configuration was the equivalent bar. Satisfying it added `@override`
