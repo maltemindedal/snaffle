@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import tracemalloc
 import unittest
 from unittest.mock import patch
 
@@ -52,6 +53,50 @@ class TestForStdout(unittest.TestCase):
         """
         with patch("sys.stdout", new=_Terminal()):
             self.assertEqual(for_stdout("one\r\ntwo\rthree"), "one\r\ntwo\\x0dthree")
+
+    def test_carriage_returns_at_the_edges_and_side_by_side(self) -> None:
+        """Test only a carriage return that starts a CRLF is kept.
+
+        The text is split on CRLF, so these are the places that could go wrong:
+        the two ends, a run of carriage returns, and a line feed before one.
+        """
+        cases = {
+            "\r": "\\x0d",
+            "a\r": "a\\x0d",
+            "\r\n": "\r\n",
+            "\r\r\n": "\\x0d\r\n",
+            "\r\n\r": "\r\n\\x0d",
+            "\n\r\n": "\n\r\n",
+            "\n\r": "\n\\x0d",
+            "\r\r": "\\x0d\\x0d",
+            "\r\n\r\n": "\r\n\r\n",
+        }
+
+        with patch("sys.stdout", new=_Terminal()):
+            for text, expected in cases.items():
+                with self.subTest(text=text):
+                    self.assertEqual(for_stdout(text), expected)
+
+    def test_a_body_of_control_characters_does_not_multiply_memory(self) -> None:
+        """Test escaping costs about the size of its result, not sixty times it.
+
+        Regression: replacing each match through a callback held a string per
+        character until the end. A 30 KB gzip that decodes to 30 MB of NULs then
+        took 1.7 GB and 22 s on a terminal. Memory is measured rather than time,
+        which would depend on the machine.
+        """
+        text = "\x00" * 3_000_000
+
+        with patch("sys.stdout", new=_Terminal()):
+            tracemalloc.start()
+            try:
+                shown = for_stdout(text)
+                _, peak = tracemalloc.get_traced_memory()
+            finally:
+                tracemalloc.stop()
+
+        self.assertEqual(shown, "\\x00" * 3_000_000)
+        self.assertLess(peak, 4 * len(shown))
 
     def test_printable_text_is_untouched(self) -> None:
         """Test ordinary text, including non-ASCII, passes through unchanged."""

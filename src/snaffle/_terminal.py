@@ -8,19 +8,23 @@ clipboard. `for_stdout` shows such characters instead of obeying them.
 It changes nothing when stdout is not a terminal, so piped and redirected output
 stays byte for byte what the server sent.
 
-The module is private and imports only `re` and `sys`, so the CLI's help paths
-stay as light as ADR 0002 requires.
+The module is private and imports only `sys`, so the CLI's help paths stay as
+light as ADR 0002 requires.
 """
 
 from __future__ import annotations
 
-import re
 import sys
 
-#: C0 controls except tab and newline, DEL, and C1 controls, plus a carriage
-#: return that does not start a CRLF. A lone carriage return lets a server
-#: overwrite text already printed on the same line.
-_CONTROLS = re.compile(r"\r(?!\n)|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+#: Each C0 control except tab and newline, DEL, and each C1 control, with its
+#: `\xNN` spelling. That includes the carriage return, which `for_stdout` keeps
+#: only where it starts a CRLF: a lone one lets a server overwrite text already
+#: printed on the same line.
+_ESCAPES = {
+    code: f"\\x{code:02x}"
+    for code in (*range(0x20), *range(0x7F, 0xA0))
+    if code not in (0x09, 0x0A)
+}
 
 
 def for_stdout(text: str) -> str:
@@ -42,4 +46,7 @@ def for_stdout(text: str) -> str:
             return text
     except (OSError, ValueError):
         return text
-    return _CONTROLS.sub(lambda match: f"\\x{ord(match.group()):02x}", text)
+    # A table applied by `str.translate` runs in C. Replacing matches with a
+    # callback did a Python call per character, so a 30 MB body of NULs took 22 s
+    # and 1.7 GB on a terminal, and a 30 KB gzip could ask for it.
+    return "\r\n".join(part.translate(_ESCAPES) for part in text.split("\r\n"))
