@@ -46,13 +46,7 @@ jobs:
         run: uv run ty check
 
       - name: Run tests
-        # TEMPORARY diagnostic for a stall seen only on Python 3.14: verbose test
-        # names, and every thread's stack if the run is still going after 60 s.
-        run: >-
-          uv run python -X dev -W error -c
-          "import faulthandler, unittest;
-          faulthandler.dump_traceback_later(60, exit=True);
-          unittest.main(module=None, argv=['unittest', 'discover', '-v', 'tests'])"
+        run: uv run python -X dev -W error -m unittest discover tests
 
       - name: Build distribution
         run: uv build
