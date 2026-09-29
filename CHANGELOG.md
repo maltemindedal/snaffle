@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-09-29
+
 ### Security
 
 - The `urllib3` floor is now 2.8.0, which fixes three advisories. Two can be
@@ -388,6 +390,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release.
 
+[3.1.0]: https://github.com/maltemindedal/snaffle/releases/tag/v3.1.0
 [3.0.0]: https://github.com/maltemindedal/snaffle/releases/tag/v3.0.0
 [2.0.0]: https://github.com/maltemindedal/snaffle/releases/tag/v2.0.0
 [1.1.0]: https://github.com/maltemindedal/snaffle/releases/tag/v1.1.0
