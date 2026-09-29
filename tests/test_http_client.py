@@ -822,6 +822,41 @@ class TestProgressOnAChunkedBody(_LocalServerTestCase):
         self.assertEqual(bar.advanced, bar.total)
 
 
+class _RetryAfterHandler(_QuietHandler):
+    """Answers every GET with a 503 that asks the client to wait 99,999 seconds."""
+
+    def do_GET(self) -> None:
+        """Sends the 503 with a huge `Retry-After`."""
+        self.send_response(503)
+        self.send_header("Retry-After", "99999")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+class TestRetryAfterIsCapped(_LocalServerTestCase):
+    """A server cannot park the client for hours by asking it to wait."""
+
+    handler = _RetryAfterHandler
+
+    def test_a_huge_retry_after_is_capped_at_two_minutes(self) -> None:
+        """Test the client sleeps at most 120 seconds between attempts.
+
+        Regression: urllib3's own ceiling is six hours per retry, so a server
+        answering 503 with `Retry-After: 99999` held a client with the default
+        three attempts for twelve hours, and neither `timeout` nor `-v` showed
+        it. Sleeping is patched out; what is checked is how long it was asked to.
+        """
+        sleeps: list[float] = []
+        with (
+            patch("urllib3.util.retry.time.sleep", side_effect=sleeps.append),
+            HTTPClient(retries=3) as client,
+            self.assertRaises(ResponseError),
+        ):
+            client.get(f"{self.base_url}/")
+
+        self.assertEqual(sleeps, [120, 120])
+
+
 class _OversizedChunkLineHandler(_QuietHandler):
     """Answers with a chunked body whose size line is padded past 64 KiB."""
 
