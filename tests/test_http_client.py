@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import contextlib
+import gzip
+import importlib.util
 import io
+import os
+import random
+import socketserver
 import threading
 import unittest
 import weakref
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, ClassVar, NoReturn, cast
 from unittest.mock import MagicMock, patch
@@ -14,17 +20,37 @@ from unittest.mock import MagicMock, patch
 import requests
 from requests.adapters import HTTPAdapter
 from typing_extensions import override
-from urllib3.connectionpool import ConnectionPool, HTTPConnectionPool
-from urllib3.exceptions import ConnectTimeoutError, ReadTimeoutError
+from urllib3.connectionpool import HTTPConnectionPool
+from urllib3.exceptions import (
+    ConnectTimeoutError,
+    LocationParseError,
+    ReadTimeoutError,
+)
 from urllib3.util.retry import Retry
 
-from snaffle.exceptions import HTTPConnectionError, ResponseError
+from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 from snaffle.http_client import HTTPClient
 
 SESSION_REQUEST = "requests.Session.request"
 #: Patched where it is used, not where it is defined: `http_client` imports the
 #: name. What it does with a body is `tests/test_download.py`'s business.
 BUFFER_INTO = "snaffle.http_client.buffer_into"
+
+
+def setUpModule() -> None:
+    """Keeps the machine's proxy settings out of these tests.
+
+    `requests` reads `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` from the
+    environment. On a machine that sets them, the loopback requests here, and
+    even urllib3's URL errors, would go through the proxy and fail for reasons
+    that say nothing about the code.
+    """
+    saved = patch.dict(os.environ)
+    saved.start()
+    unittest.addModuleCleanup(saved.stop)
+    for name in ("http_proxy", "https_proxy", "all_proxy"):
+        os.environ.pop(name, None)
+        os.environ.pop(name.upper(), None)
 
 
 def _adapter_of(client: HTTPClient, url: str = "http://x") -> Any:
@@ -252,6 +278,163 @@ class TestHTTPClient(unittest.TestCase):
             HTTPClient(retries=0)
 
 
+class _PatientClient(HTTPClient):
+    """The subclassing pattern `docs/guides/using-as-a-library.md` documents."""
+
+    def patience(self) -> str:
+        """A method only the subclass has."""
+        return "patient"
+
+
+class TestSubclassing(unittest.TestCase):
+    """What a subclass can rely on."""
+
+    def test_a_with_block_keeps_the_subclass_type(self) -> None:
+        """Test `with Sub() as client` is typed as `Sub`, not as `HTTPClient`.
+
+        The assertion here is the type checker's: `ty check` runs over the
+        tests, and it rejects `client.patience()` if `__enter__` is annotated as
+        returning the base class. At run time the test passes either way.
+        """
+        with _PatientClient() as client:
+            self.assertEqual(client.patience(), "patient")
+
+
+class TestVerboseOutput(unittest.TestCase):
+    """What `verbose=True` prints about a request before it is sent."""
+
+    @staticmethod
+    def _verbose_get(**kwargs: Any) -> tuple[str, Any]:
+        """Sends one verbose GET through a mocked session and returns its stdout."""
+        response = MagicMock(status_code=200, headers={"Content-Type": "text/plain"})
+        stdout = io.StringIO()
+        with (
+            patch(SESSION_REQUEST, return_value=response) as mock_request,
+            contextlib.redirect_stdout(stdout),
+            HTTPClient(verbose=True) as client,
+        ):
+            client.get("http://example.test/", **kwargs)
+        return stdout.getvalue(), mock_request
+
+    def test_a_request_without_secrets_is_printed_as_it_always_was(self) -> None:
+        """Pin the line's shape, so redaction is known to change nothing else."""
+        output, _ = self._verbose_get(headers={"X-Trace": "t-1"}, json={"k": "v"})
+
+        self.assertEqual(
+            output.splitlines()[0],
+            "[VERBOSE] Sending GET request to http://example.test/ with "
+            "{'headers': {'X-Trace': 't-1'}, 'json': {'k': 'v'}}",
+        )
+
+    def test_credential_headers_are_redacted_but_still_sent(self) -> None:
+        """Test `Authorization`, `Proxy-Authorization` and `Cookie` are not echoed.
+
+        Verbose output is what gets pasted into issues and CI logs, and it shares
+        stdout with the response. The names are matched without regard to case.
+        The request itself must still carry the real values.
+        """
+        headers = {
+            "Authorization": "Bearer S3CR3T",
+            "proxy-authorization": "Basic cHJveHk=",
+            "COOKIE": "sid=abc123",
+            "X-Trace": "t-1",
+        }
+
+        before = dict(headers)
+
+        output, mock_request = self._verbose_get(headers=headers)
+
+        for secret in ("S3CR3T", "cHJveHk=", "abc123"):
+            self.assertNotIn(secret, output)
+        self.assertEqual(output.count("<redacted>"), 3)
+        self.assertIn("'X-Trace': 't-1'", output)
+        # Compared with a copy taken beforehand: redacting the caller's own dict
+        # in place would change what is sent, and `headers` is that same dict.
+        self.assertEqual(mock_request.call_args.kwargs["headers"], before)
+        self.assertEqual(headers, before)
+
+    def test_header_names_given_as_bytes_are_redacted_too(self) -> None:
+        """Test `requests` accepts `bytes` for a header name, and so must redaction.
+
+        `str(b"Authorization")` is `"b'Authorization'"`, which no name in the
+        list matches, so such a header used to be printed in full.
+        """
+        headers = {b"Authorization": b"Bearer S3CR3T", b"COOKIE": b"sid=abc123"}
+        before = dict(headers)
+
+        output, mock_request = self._verbose_get(headers=headers)
+
+        self.assertNotIn("S3CR3T", output)
+        self.assertNotIn("abc123", output)
+        self.assertEqual(output.count("<redacted>"), 2)
+        self.assertEqual(mock_request.call_args.kwargs["headers"], before)
+
+    def test_the_proxies_argument_is_redacted_but_still_sent(self) -> None:
+        """Test a proxy URL with a password in it is not echoed.
+
+        `proxies={"https": "http://user:pw@host:3128"}` is how `requests` is
+        given proxy credentials, and `Proxy-Authorization` is redacted already.
+        """
+        proxies = {"http": "http://user:hunter2@proxy.test:3128"}
+
+        output, mock_request = self._verbose_get(proxies=proxies)
+
+        self.assertNotIn("hunter2", output)
+        self.assertNotIn("proxy.test", output)
+        self.assertEqual(mock_request.call_args.kwargs["proxies"], proxies)
+
+    def test_the_auth_and_cookies_arguments_are_redacted_but_still_sent(self) -> None:
+        """Test credentials passed as `auth=` or `cookies=` are not echoed either."""
+        output, mock_request = self._verbose_get(
+            auth=("user", "hunter2"), cookies={"sid": "abc123"}
+        )
+
+        self.assertNotIn("hunter2", output)
+        self.assertNotIn("abc123", output)
+        self.assertEqual(mock_request.call_args.kwargs["auth"], ("user", "hunter2"))
+        self.assertEqual(mock_request.call_args.kwargs["cookies"], {"sid": "abc123"})
+
+
+class _Terminal(io.StringIO):
+    """A stdout that reports being a terminal."""
+
+    @override
+    def isatty(self) -> bool:
+        """Says this is a terminal."""
+        return True
+
+
+class TestVerboseErrorsOnATerminal(unittest.TestCase):
+    """The exception text `verbose` prints can come from the server."""
+
+    def test_a_server_chosen_error_cannot_drive_a_terminal(self) -> None:
+        """Test control characters in a failure are escaped on every verbose line.
+
+        `make_request` prints one line for each of three kinds of failure, and a
+        line that lost its escaping would not show in the others.
+        """
+        cases = (
+            (requests.exceptions.HTTPError, ResponseError),
+            (requests.exceptions.ConnectionError, HTTPConnectionError),
+            (requests.exceptions.RequestException, HTTPClientError),
+        )
+        for cause, raised in cases:
+            with self.subTest(cause=cause.__name__):
+                hostile = cause("failure: \x1b]0;pwned\x07")
+                terminal = _Terminal()
+
+                with (
+                    patch(SESSION_REQUEST, side_effect=hostile),
+                    patch("sys.stdout", new=terminal),
+                    HTTPClient(verbose=True) as client,
+                    self.assertRaises(raised),
+                ):
+                    client.get("http://example.test/")
+
+                self.assertNotIn("\x1b", terminal.getvalue())
+                self.assertIn("\\x1b]0;pwned\\x07", terminal.getvalue())
+
+
 class TestSessionReuse(unittest.TestCase):
     """Test cases covering connection pooling and lifecycle."""
 
@@ -438,15 +621,18 @@ class _NoSocketPool(HTTPConnectionPool):
     urllib3, which is the price of watching the loop from outside.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, failure: Callable[[], Exception] | None = None) -> None:
         super().__init__("127.0.0.1", 9)
         self.attempts = 0
+        self._failure = failure or (
+            lambda: ConnectTimeoutError("no socket is opened by this test double")
+        )
 
     @override
     def _new_conn(self) -> NoReturn:
-        """Counts the attempt and fails it as if the connection had timed out."""
+        """Counts the attempt and fails it, by default as a connect timeout."""
         self.attempts += 1
-        raise ConnectTimeoutError("no socket is opened by this test double")
+        raise self._failure()
 
 
 class _NoSocketAdapter(HTTPAdapter):
@@ -463,7 +649,7 @@ class _NoSocketAdapter(HTTPAdapter):
         verify: bool | str | None,
         proxies: Any = None,
         cert: Any = None,
-    ) -> ConnectionPool:
+    ) -> HTTPConnectionPool:
         """Hands `requests` the pool that never connects."""
         return self.no_socket_pool
 
@@ -503,6 +689,51 @@ class TestRetryWithoutASocket(unittest.TestCase):
 
         self.assertEqual(pool.attempts, 3)
 
+    def test_a_read_timeout_maps_by_method(self) -> None:
+        """Test the documented mapping of a read timeout, for every verb.
+
+        A method that may be replayed has its read timeout retried, and once the
+        attempts are spent urllib3 raises `MaxRetryError`, which `requests` makes
+        a `ConnectionError`: an `HTTPConnectionError`. `POST` and `PATCH` are never
+        replayed after a read failure, so the `ReadTimeout` itself reaches the
+        general case: an `HTTPClientError`.
+        """
+
+        def read_timeout() -> Exception:
+            return ReadTimeoutError(cast(Any, None), "/", "read timed out")
+
+        retried = ("get", "head", "put", "delete", "options")
+        for verb in (*retried, "post", "patch"):
+            with self.subTest(verb=verb), patch("urllib3.util.retry.time.sleep"):
+                pool = _NoSocketPool(read_timeout)
+                with self._client(3, pool) as client:
+                    if verb in retried:
+                        with (
+                            self.assertLogs("urllib3", "WARNING"),
+                            self.assertRaises(HTTPConnectionError),
+                        ):
+                            getattr(client, verb)("http://never.invalid/thing")
+                        self.assertEqual(pool.attempts, 3)
+                    else:
+                        with self.assertRaises(HTTPClientError) as caught:
+                            getattr(client, verb)("http://never.invalid/thing")
+                        self.assertNotIsInstance(caught.exception, HTTPConnectionError)
+                        self.assertEqual(pool.attempts, 1, "never replayed")
+
+    def test_a_connect_timeout_is_a_connection_error_for_every_verb(self) -> None:
+        """Test a connect timeout never reaches the general `HTTPClientError` case."""
+        for verb in ("get", "head", "put", "delete", "options", "post", "patch"):
+            with self.subTest(verb=verb), patch("urllib3.util.retry.time.sleep"):
+                pool = _NoSocketPool()
+                with (
+                    self.assertLogs("urllib3", "WARNING"),
+                    self._client(2, pool) as client,
+                    self.assertRaises(HTTPConnectionError),
+                ):
+                    getattr(client, verb)("http://never.invalid/thing")
+
+                self.assertEqual(pool.attempts, 2)
+
     def test_a_one_attempt_client_does_not_retry(self) -> None:
         """Test the attempt count follows the policy rather than the double."""
         pool = _NoSocketPool()
@@ -516,10 +747,13 @@ class _CountingHandler(_QuietHandler):
     """Answers `/flaky` with a 503 and everything else with a 404, counting hits."""
 
     hits: ClassVar[list[str]] = []
+    #: One entry per TCP connection that reached the server, by client port.
+    peers: ClassVar[set[tuple[str, int]]] = set()
 
     def _reply(self) -> None:
         """Records the request and answers it without ever succeeding."""
         self.hits.append(f"{self.command} {self.path}")
+        self.peers.add(self.client_address)
         self.send_body(503 if self.path == "/flaky" else 404, b"{}")
 
     do_GET = _reply
@@ -531,10 +765,12 @@ class TestRetryAgainstRealServer(_LocalServerTestCase):
 
     handler = _CountingHandler
     hits: ClassVar[list[str]] = _CountingHandler.hits
+    peers: ClassVar[set[tuple[str, int]]] = _CountingHandler.peers
 
     @override
     def setUp(self) -> None:
         self.hits.clear()
+        self.peers.clear()
 
     def test_get_on_503_is_retried(self) -> None:
         """Test a transient status really is re-sent for an idempotent method."""
@@ -563,6 +799,40 @@ class TestRetryAgainstRealServer(_LocalServerTestCase):
                     client.get(f"{self.base_url}/missing")
             self.assertIs(client.session.get_adapter(self.base_url), pool)
         self.assertEqual(len(self.hits), 4)
+        self.assertEqual(len(self.peers), 1, "one TCP connection, reused")
+
+    def test_a_streamed_error_response_releases_its_connection(self) -> None:
+        """Test a failing GET with a progress bar still returns its connection.
+
+        Regression: `show_progress` sends a GET as `stream=True`, and a 4xx or
+        5xx was raised without reading its body. The connection then stayed
+        checked out until the exception was collected, so every failure opened
+        a new socket, and `close()` could not release them. The errors are kept
+        alive here on purpose, the way a batch script that collects them would.
+        """
+        errors: list[ResponseError] = []
+        with HTTPClient(show_progress=True, retries=1) as client:
+            for _ in range(3):
+                with self.assertRaises(ResponseError) as caught:
+                    client.get(f"{self.base_url}/missing")
+                errors.append(caught.exception)
+
+        self.assertEqual(len(self.peers), 1, "one TCP connection, reused")
+        for error in errors:
+            response = cast(Any, error.__cause__).response
+            self.assertEqual(response.text, "{}", "the error body stays readable")
+
+    def test_a_stream_the_caller_asked_for_is_left_unread_on_an_error(self) -> None:
+        """Test the client does not read the error body of a stream the caller owns."""
+        with (
+            HTTPClient(show_progress=True, retries=1) as client,
+            self.assertRaises(ResponseError) as caught,
+        ):
+            client.get(f"{self.base_url}/missing", stream=True)
+
+        response = cast(Any, caught.exception.__cause__).response
+        self.assertFalse(response._content_consumed, "the client did not read it")
+        response.close()
 
 
 #: Deliberately over `MIN_SIZE_FOR_PROGRESS`, so the progress path is fully live.
@@ -619,6 +889,425 @@ class TestProgressAgainstRealServer(_LocalServerTestCase):
             self.assertTrue(cast(Any, response)._content_consumed)
             self.assertIn("%", stderr.getvalue(), "a bar is drawn for a download")
             self.assertEqual(response.content, LARGE_BODY)
+
+
+class _RecordingBar:
+    """Stands in for `tqdm`, recording its total and how far it was advanced.
+
+    The tests below check the contract with the bar, not the text tqdm draws,
+    which depends on `TQDM_*` settings that tqdm reads when it is imported.
+    """
+
+    instances: ClassVar[list[_RecordingBar]] = []
+
+    def __init__(self, total: int | None = None, **_: Any) -> None:
+        self.total = total
+        self.advanced = 0
+        self.instances.append(self)
+
+    def update(self, n: float | None = 1) -> bool | None:
+        """Records a step."""
+        self.advanced += int(n or 0)
+        return True
+
+    def close(self) -> None:
+        """Does nothing; there is no terminal to give back."""
+
+
+#: About 200 KB that will not compress, then 2 MB that compresses to almost nothing:
+#: a few hundred KB on the wire that decode to 2.2 MB.
+COMPRESSIBLE_BODY = random.Random(0).randbytes(200_000) + b"\0" * 2_000_000
+GZIPPED_BODY = gzip.compress(COMPRESSIBLE_BODY, compresslevel=1)
+
+
+class _GzipBodyHandler(_QuietHandler):
+    """Serves `COMPRESSIBLE_BODY` gzip-encoded, with the compressed `Content-Length`."""
+
+    def do_GET(self) -> None:
+        """Answers with the gzip body."""
+        self.send_response(200)
+        self.send_header("Content-Encoding", "gzip")
+        self.send_header("Content-Length", str(len(GZIPPED_BODY)))
+        self.end_headers()
+        self.wfile.write(GZIPPED_BODY)
+
+
+class TestProgressOnACompressedBody(_LocalServerTestCase):
+    """The bar counts what crossed the wire, which is what `Content-Length` counts."""
+
+    handler = _GzipBodyHandler
+
+    def test_the_bar_is_advanced_by_exactly_its_total(self) -> None:
+        """Test a compressed download does not run the bar past its total.
+
+        Regression: the bar's total is the `Content-Length`, which counts the
+        compressed bytes on the wire, but it was advanced by the decoded chunks,
+        so this body moved a bar of about 209 kB by 2.2 MB.
+        """
+        _RecordingBar.instances.clear()
+        with (
+            patch.object(HTTPClient, "MIN_SIZE_FOR_PROGRESS", 1024),
+            patch("tqdm.tqdm", _RecordingBar),
+            HTTPClient(show_progress=True) as client,
+        ):
+            response = client.get(f"{self.base_url}/")
+
+        self.assertEqual(response.content, COMPRESSIBLE_BODY, "the body is decoded")
+        (bar,) = _RecordingBar.instances
+        self.assertEqual(bar.total, len(GZIPPED_BODY))
+        self.assertEqual(bar.advanced, bar.total)
+
+
+CHUNKED_BODY = b"snaffle!" * 40_000
+
+
+class _ChunkedWithLengthHandler(_QuietHandler):
+    """Sends a chunked body that also carries a `Content-Length` for the same bytes.
+
+    RFC 9112 forbids the pair, but servers send it, and urllib3 reads the body as
+    chunked without ever advancing `raw.tell()`.
+    """
+
+    def do_GET(self) -> None:
+        """Answers with 320,000 bytes in 64,000-byte chunks."""
+        self.send_response(200)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("Content-Length", str(len(CHUNKED_BODY)))
+        self.end_headers()
+        for start in range(0, len(CHUNKED_BODY), 64_000):
+            chunk = CHUNKED_BODY[start : start + 64_000]
+            self.wfile.write(b"%x\r\n%s\r\n" % (len(chunk), chunk))
+        self.wfile.write(b"0\r\n\r\n")
+
+
+class TestProgressOnAChunkedBody(_LocalServerTestCase):
+    """The bar still moves when the transport cannot say how far the wire has got."""
+
+    handler = _ChunkedWithLengthHandler
+
+    def test_the_bar_falls_back_to_decoded_bytes(self) -> None:
+        """Test a body whose `raw.tell()` never moves still fills the bar.
+
+        Regression for the wire-byte counting: `raw.tell()` stays at zero for a
+        chunked body, so trusting it froze the bar at 0%. The same happens for a
+        response served by a caching session.
+        """
+        _RecordingBar.instances.clear()
+        with (
+            patch.object(HTTPClient, "MIN_SIZE_FOR_PROGRESS", 1024),
+            patch("tqdm.tqdm", _RecordingBar),
+            HTTPClient(show_progress=True) as client,
+        ):
+            response = client.get(f"{self.base_url}/")
+
+        self.assertEqual(response.content, CHUNKED_BODY)
+        (bar,) = _RecordingBar.instances
+        self.assertEqual(bar.total, len(CHUNKED_BODY))
+        self.assertEqual(bar.advanced, bar.total)
+
+
+class _StalledBodyHandler(_QuietHandler):
+    """Sends a 200 whose body stops after three of a hundred bytes, and holds on."""
+
+    hits: ClassVar[list[str]] = []
+    release: ClassVar[threading.Event] = threading.Event()
+
+    def _stall(self) -> None:
+        """Records the request, sends the headers and a fragment, then waits."""
+        self.hits.append(self.command)
+        self.send_response(200)
+        self.send_header("Content-Length", "100")
+        self.end_headers()
+        self.wfile.write(b"abc")
+        self.wfile.flush()
+        self.release.wait(10)
+
+    do_GET = _stall
+    do_POST = _stall
+
+
+class TestReadTimeoutMidBody(_LocalServerTestCase):
+    """A read timeout after the headers maps differently from one before them.
+
+    `TestRetryWithoutASocket.test_a_read_timeout_maps_by_method` covers a server
+    that never answers. This is the common hang, a download that stops.
+    """
+
+    handler = _StalledBodyHandler
+
+    @classmethod
+    @override
+    def tearDownClass(cls) -> None:
+        """Lets the handler threads go before the server is closed."""
+        _StalledBodyHandler.release.set()
+        super().tearDownClass()
+
+    def test_a_stalled_body_is_a_connection_error_and_is_not_retried(self) -> None:
+        """Test `GET` and `POST` both end as `HTTPConnectionError`, after one try.
+
+        `requests` raises `ConnectionError` when the body read times out, which
+        is a connection error whatever the method, and the retry policy is out
+        of reach once the response has started. Neither the `POST` landing in
+        `HTTPClientError` nor the `GET` being replayed is what happens.
+        """
+        for verb in ("get", "post"):
+            with self.subTest(verb=verb):
+                _StalledBodyHandler.hits.clear()
+                with (
+                    HTTPClient(timeout=1, retries=3) as client,
+                    self.assertRaises(HTTPConnectionError),
+                ):
+                    getattr(client, verb)(f"{self.base_url}/")
+
+                self.assertEqual(_StalledBodyHandler.hits, [verb.upper()])
+
+
+class _RetryAfterHandler(_QuietHandler):
+    """Answers every GET with a 503 that asks the client to wait 99,999 seconds."""
+
+    def do_GET(self) -> None:
+        """Sends the 503 with a huge `Retry-After`."""
+        self.send_response(503)
+        self.send_header("Retry-After", "99999")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+class TestRetryAfterIsCapped(_LocalServerTestCase):
+    """A server cannot park the client for hours by asking it to wait."""
+
+    handler = _RetryAfterHandler
+
+    def test_a_huge_retry_after_is_capped_at_two_minutes(self) -> None:
+        """Test the client sleeps at most 120 seconds between attempts.
+
+        Regression: urllib3's own ceiling is six hours per retry, so a server
+        answering 503 with `Retry-After: 99999` held a client with the default
+        three attempts for twelve hours, and neither `timeout` nor `-v` showed
+        it. Sleeping is patched out; what is checked is how long it was asked to.
+        """
+        sleeps: list[float] = []
+        with (
+            patch("urllib3.util.retry.time.sleep", side_effect=sleeps.append),
+            HTTPClient(retries=3) as client,
+            self.assertRaises(ResponseError),
+        ):
+            client.get(f"{self.base_url}/")
+
+        self.assertEqual(sleeps, [120, 120])
+
+
+class _OversizedChunkLineHandler(_QuietHandler):
+    """Answers with a chunked body whose size line is padded past 64 KiB."""
+
+    def do_GET(self) -> None:
+        """Sends one valid five-byte chunk, its size written with 70,000 zeros."""
+        self.send_response(200)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        self.wfile.write(b"0" * 70_000 + b"5\r\nhello\r\n0\r\n\r\n")
+
+
+class TestHostileResponses(_LocalServerTestCase):
+    """What a server that misbehaves on purpose can and cannot do to a client."""
+
+    handler = _OversizedChunkLineHandler
+
+    def test_an_oversized_chunk_size_line_is_refused(self) -> None:
+        """Test a chunk-size line over 64 KiB fails fast instead of being buffered.
+
+        Regression for urllib3 < 2.8.0, which buffered a chunk-size line of any
+        length, so one response could exhaust the client's memory. The body
+        here is well-formed apart from the padding, so an unpatched urllib3
+        returns `b"hello"` and this test fails.
+        """
+        with (
+            HTTPClient(retries=1) as client,
+            self.assertRaises(HTTPClientError) as caught,
+        ):
+            client.get(f"{self.base_url}/")
+
+        self.assertIn("chunk size line", str(caught.exception))
+
+
+class _EchoAcceptEncodingHandler(_QuietHandler):
+    """Answers with the `Accept-Encoding` header the request carried."""
+
+    def do_GET(self) -> None:
+        """Sends the header's value back as the body."""
+        self.send_body(200, self.headers.get("Accept-Encoding", "").encode())
+
+
+@unittest.skipUnless(
+    importlib.util.find_spec("brotli") is not None,
+    "the speedups extra is not installed",
+)
+class TestSpeedupsExtra(_LocalServerTestCase):
+    """The `speedups` extra must switch on every encoding it promises."""
+
+    handler = _EchoAcceptEncodingHandler
+
+    def test_the_extra_negotiates_brotli_and_zstd(self) -> None:
+        """Test a client with the extra installed asks for `br` and `zstd`.
+
+        Regression: the extra once named `zstandard`, which urllib3 stopped
+        loading in 2.6.0, so zstd was silently never negotiated before
+        Python 3.14. Only a request on the wire shows what the client offers.
+        """
+        with HTTPClient(retries=1) as client:
+            offered = client.get(f"{self.base_url}/").text
+
+        encodings = {token.strip() for token in offered.split(",")}
+        self.assertLessEqual({"br", "zstd"}, encodings, offered)
+
+
+class _RequestLineRecorder(socketserver.StreamRequestHandler):
+    """Records the raw request line, then answers with an empty 200.
+
+    `http.server` rewrites a request target that starts with `//` before a
+    handler sees it, so only a raw socket shows what the client put on the wire.
+    """
+
+    lines: ClassVar[list[str]] = []
+
+    @override
+    def handle(self) -> None:
+        """Reads the request line and closes the exchange."""
+        self.lines.append(self.rfile.readline().decode("ascii").rstrip("\r\n"))
+        self.wfile.write(
+            b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        )
+
+
+_REQUESTS_MINOR = tuple(int(part) for part in requests.__version__.split(".")[:2])
+#: requests 2.34 stopped collapsing a leading `//` in the path to `/`.
+REQUESTS_KEEPS_LEADING_SLASHES = _REQUESTS_MINOR >= (2, 34)
+
+
+class TestRequestTarget(unittest.TestCase):
+    """What the client writes on the request line."""
+
+    @unittest.skipUnless(
+        REQUESTS_KEEPS_LEADING_SLASHES, "requests before 2.34 collapses a leading //"
+    )
+    def test_duplicate_leading_slashes_are_sent_as_written(self) -> None:
+        """Test `//a//b` reaches the server unchanged.
+
+        This is `requests` behavior, not snaffle's: 2.34 stopped collapsing a
+        leading `//` to `/`, which had broken some presigned URLs, and the
+        project's declared floor is older, so the test runs only where it holds.
+        The path is the caller's to choose, so it is sent as given.
+        """
+        _RequestLineRecorder.lines.clear()
+        server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), _RequestLineRecorder)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+
+        with HTTPClient(retries=1) as client:
+            client.get(f"http://127.0.0.1:{server.server_address[1]}//double//slash")
+
+        self.assertEqual(_RequestLineRecorder.lines, ["GET //double//slash HTTP/1.1"])
+
+
+class _RedirectToBadHostHandler(_QuietHandler):
+    """Redirects every GET to a host that cannot be parsed."""
+
+    def do_GET(self) -> None:
+        """Answers with a 302 whose `Location` names `a..b`."""
+        self.send_response(302)
+        self.send_header("Location", "http://a..b/")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+class TestServerChosenLocation(_LocalServerTestCase):
+    """A redirect target is chosen by the server, so its errors are the client's."""
+
+    handler = _RedirectToBadHostHandler
+
+    def test_a_redirect_to_an_unparsable_host_is_a_client_error(self) -> None:
+        """Test the failure is reported as `HTTPClientError`, not a raw urllib3 one."""
+        with (
+            HTTPClient(retries=1) as client,
+            self.assertRaises(HTTPClientError) as caught,
+        ):
+            client.get(f"{self.base_url}/")
+
+        self.assertIsInstance(caught.exception.__cause__, LocationParseError)
+
+
+class _TruncatedErrorHandler(_QuietHandler):
+    """Answers 500 and promises 100 bytes, sends ten, then hangs up."""
+
+    def do_GET(self) -> None:
+        """Sends a short error body and closes the connection."""
+        self.send_response(500)
+        self.send_header("Content-Length", "100")
+        self.end_headers()
+        self.wfile.write(b"0123456789")
+        self.close_connection = True
+
+
+class TestErrorBodyDrain(_LocalServerTestCase):
+    """Reading a streamed error body must never change what the caller is told."""
+
+    handler = _TruncatedErrorHandler
+
+    def test_a_truncated_error_body_still_reports_the_status(self) -> None:
+        """Test the HTTP status wins when the error body cannot be read.
+
+        The client reads a streamed error body so the connection can be reused.
+        When that read fails, the caller must still get the `ResponseError` with
+        the real status, as they did before the read existed, not a transport
+        error that hides it.
+        """
+        with (
+            HTTPClient(show_progress=True, retries=1) as client,
+            self.assertRaises(ResponseError) as caught,
+        ):
+            client.get(f"{self.base_url}/")
+
+        response = cast(Any, caught.exception.__cause__).response
+        self.assertEqual(response.status_code, 500)
+
+
+class TestMalformedHosts(unittest.TestCase):
+    """Hosts urllib3 refuses to parse are the caller's mistake, not an outage."""
+
+    def test_an_unparsable_host_is_a_client_error(self) -> None:
+        """Test a host urllib3 cannot encode raises `HTTPClientError`.
+
+        Regression: urllib3 raises `LocationParseError` while connecting for an
+        empty label (`a..b`) or a label over 63 characters, and it is not a
+        `requests` exception, so it left `make_request` unwrapped. The API
+        reference promises `HTTPClientError` for a malformed URL. Nothing is sent:
+        the failure comes before any lookup.
+        """
+        for host in ("a..b", "a" * 300 + ".com"):
+            with self.subTest(host=host[:20]):
+                with (
+                    HTTPClient(retries=1) as client,
+                    self.assertRaises(HTTPClientError) as caught,
+                ):
+                    client.get(f"http://{host}/")
+
+                self.assertNotIsInstance(caught.exception, HTTPConnectionError)
+                self.assertIsInstance(caught.exception.__cause__, LocationParseError)
+
+    def test_a_host_with_a_space_is_a_client_error(self) -> None:
+        """Test a raw space in the host is rejected before any connection attempt.
+
+        urllib3 < 2.8.0 accepted it and looked the mangled name up, so the
+        failure surfaced as an `HTTPConnectionError` after a DNS round trip.
+        """
+        with (
+            HTTPClient(retries=1) as client,
+            self.assertRaises(HTTPClientError) as caught,
+        ):
+            client.get("http://exa mple.com/")
+
+        self.assertNotIsInstance(caught.exception, HTTPConnectionError)
 
 
 if __name__ == "__main__":

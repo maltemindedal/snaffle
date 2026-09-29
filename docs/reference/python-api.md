@@ -41,7 +41,7 @@ call `close()`.
 | --- | --- | --- | --- |
 | `timeout` | `int` | `30` | Seconds before a request times out. Must be `> 0`; `ValueError` otherwise. |
 | `retries` | `int` | `3` | Total attempts for a failed request, not retries after the first. Must be `> 0`; `ValueError` otherwise. Translated to `urllib3.util.retry.Retry(total=retries - 1)`. |
-| `verbose` | `bool` | `False` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. |
+| `verbose` | `bool` | `False` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. The values of `Authorization`, `Proxy-Authorization` and `Cookie` headers and of the `auth`, `cookies` and `proxies` arguments are shown as `<redacted>`; everything else, including `data`, `params` and the URL, is shown as given. |
 | `show_progress` | `bool` | `False` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. A caller who passes `stream=True` opts out; see [`make_request`](#make_request). |
 | `session` | `requests.Session \| None` | `None` | The session to send through. `None` builds the pooled, retrying session described above. A session passed here is used exactly as it arrives; see below. |
 
@@ -136,6 +136,12 @@ sets `stream=True` when it is going to feed a progress bar, sends the request
 with the client's `timeout`, calls `raise_for_status()`, and translates
 `requests` exceptions into this package's hierarchy.
 
+Every other keyword argument is passed to `requests.Session.request`. `timeout`
+is the exception: it is set once, on the client, and passing it to a call raises
+`TypeError` (`got multiple values for keyword argument 'timeout'`), as does
+`method` or `url` by keyword. To use a different timeout for a request, build a
+client with that `timeout`.
+
 When progress tracking is active it drains the body into `response._content` and
 marks it consumed, so `.text` and `.json()` serve the buffer rather than
 re-reading a drained socket.
@@ -153,8 +159,8 @@ Raises:
 | --- | --- |
 | `ValueError` | `method` is not in `allowed_methods`. Raised before any network access. |
 | `ResponseError` | The response carried a 4xx or 5xx status, including a retryable status that was still failing on the last attempt. |
-| `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. |
-| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout, too many redirects, or a malformed URL. |
+| `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. Also a read timeout on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS` while waiting for the response, which is retried and, once the attempts are spent, ends as a connection error, and a read timeout while the body is being read, for every method, which is not retried. |
+| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout on a `POST` or `PATCH` while waiting for the response, too many redirects, or a malformed URL, and urllib3's `LocationValueError` for a host it cannot parse. |
 
 Two boundaries are easy to get wrong:
 
@@ -165,10 +171,25 @@ Two boundaries are easy to get wrong:
   status, which is more useful than a generic connection failure. Only
   *connection* retries exhaust into `RetryError`, and that is what the
   `HTTPConnectionError` row above refers to.
-- **A connect timeout is an `HTTPConnectionError`; a read timeout is an
-  `HTTPClientError`.** `requests.exceptions.ConnectTimeout` subclasses
-  `ConnectionError`, so it is caught as a connection failure. `ReadTimeout`
-  does not, so it falls through to the general case.
+- **A connect timeout is an `HTTPConnectionError` for every method. A read
+  timeout depends on the method, and on when it strikes.**
+  `requests.exceptions.ConnectTimeout` subclasses `ConnectionError`, so it is
+  caught as a connection failure. A read timeout *while waiting for the response*
+  on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS` is retried; when the attempts
+  are spent urllib3 raises `MaxRetryError`, which `requests` turns into a
+  `ConnectionError`, so it is an `HTTPConnectionError` too. A `POST` or `PATCH`
+  is never replayed after a read failure, so its `ReadTimeout` reaches the
+  general case and is an `HTTPClientError`. A server that stopped answering
+  therefore reports `Failed to connect to ...` for a `GET`.
+- **A timeout after the headers is a connection error and is not retried.**
+  Once the status line has arrived the request is under way, so a server that
+  sends the headers and part of the body and then goes silent raises
+  `requests.exceptions.ConnectionError` from the body read, for every method,
+  after one attempt. That is an `HTTPConnectionError` even for a `POST` or
+  `PATCH`. It happens inside `make_request` for an ordinary call, which reads the
+  body before returning, and while draining the body when `show_progress` is on.
+  With `stream=True` you read the body yourself, after `make_request` has
+  returned, and the exception is `requests`' own.
 
 #### `close`
 
@@ -213,7 +234,8 @@ Exception
 ```
 
 Catching `HTTPClientError` catches all three. Each carries a message string; the
-original `requests` exception is attached as `__cause__`.
+original exception is attached as `__cause__`. It comes from `requests`, or from
+urllib3 when a host cannot be parsed.
 
 ```python
 try:
@@ -231,8 +253,10 @@ except HTTPConnectionError as error:
 ## Retry behaviour
 
 Retries live on the session's `HTTPAdapter` as a `urllib3.util.retry.Retry`
-with `backoff_factor=0.3`, `respect_retry_after_header=True`, and
-`raise_on_status=False`. Which failures are retried depends on the method:
+with `backoff_factor=0.3`, `respect_retry_after_header=True`,
+`retry_after_max=120`, and `raise_on_status=False`. A `Retry-After` header is
+honoured up to two minutes; a server that asks for longer is waited on for two
+minutes. Which failures are retried depends on the method:
 
 | Failure | `GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS` | `POST`, `PATCH` |
 | --- | --- | --- |

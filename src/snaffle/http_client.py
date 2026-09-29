@@ -7,17 +7,62 @@ of paying for a fresh handshake each time.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from types import TracebackType
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.exceptions import LocationValueError
 from urllib3.util.retry import Retry
 
 from snaffle._download import buffer_into, should_buffer
+from snaffle._terminal import for_stdout
 from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 
 __all__ = ["HTTPClient", "ProgressBar"]
+
+#: Lets `__enter__` return the type of a subclass. `typing.Self` needs Python 3.11
+#: and this package supports 3.10.
+_ClientT = TypeVar("_ClientT", bound="HTTPClient")
+
+
+#: Request headers whose values `verbose` never prints.
+_SECRET_HEADERS = frozenset({"authorization", "proxy-authorization", "cookie"})
+#: Keyword arguments whose values are credentials or carry them, such as the
+#: password in the URL of an authenticating proxy, and are never printed.
+_SECRET_KWARGS = ("auth", "cookies", "proxies")
+
+
+def _is_secret_header(name: object) -> bool:
+    """Reports whether a request header called `name` carries a credential.
+
+    `requests` accepts a header name as `bytes`, which `str()` would turn into
+    `"b'authorization'"`, so it is decoded first.
+    """
+    text = name.decode("latin-1") if isinstance(name, bytes) else str(name)
+    return text.lower() in _SECRET_HEADERS
+
+
+def _redacted(kwargs: Mapping[str, Any]) -> dict[str, Any]:
+    """Returns a copy of `kwargs` that is safe to print, for `verbose` output.
+
+    The values of the credential headers and of the `auth`, `cookies` and
+    `proxies` arguments are replaced by `<redacted>`. Nothing else changes: the
+    JSON body, `data`, `params`, the other headers and the URL are shown as
+    given, and the request that is sent still carries the real values.
+    """
+    shown = dict(kwargs)
+    for name in _SECRET_KWARGS:
+        if name in shown:
+            shown[name] = "<redacted>"
+    headers = shown.get("headers")
+    if isinstance(headers, Mapping):
+        shown["headers"] = {
+            key: "<redacted>" if _is_secret_header(key) else value
+            for key, value in headers.items()
+        }
+    return shown
 
 
 class ProgressBar(Protocol):
@@ -142,6 +187,10 @@ class HTTPClient:
             status_forcelist=sorted(cls.RETRY_STATUSES),
             backoff_factor=0.3,
             respect_retry_after_header=True,
+            # urllib3 allows a server to ask for up to six hours per retry. Two
+            # minutes is its own ceiling for backoff, and long enough for any
+            # sensible rate limit.
+            retry_after_max=120,
             raise_on_status=False,
         )
         adapter = HTTPAdapter(
@@ -164,7 +213,7 @@ class HTTPClient:
         if self._owns_session:
             self.session.close()
 
-    def __enter__(self) -> HTTPClient:
+    def __enter__(self: _ClientT) -> _ClientT:
         """Returns the client itself, for use as a context manager."""
         return self
 
@@ -201,7 +250,9 @@ class HTTPClient:
         Args:
             method (str): The HTTP method to use (e.g., 'GET', 'POST').
             url (str): The URL to send the request to.
-            **kwargs: Keyword arguments passed to `requests.Session.request`.
+            **kwargs: Keyword arguments passed to `requests.Session.request`,
+                except `timeout`, which is set on the client and raises a
+                `TypeError` if passed here.
 
         Returns:
             requests.Response: The HTTP response object.
@@ -225,14 +276,28 @@ class HTTPClient:
 
         if verbose:
             print(
-                f"[VERBOSE] Sending {normalized_method} request to {url} with {kwargs}"
+                f"[VERBOSE] Sending {normalized_method} request to {url} "
+                f"with {_redacted(kwargs)}"
             )
 
         try:
             response = self.session.request(
                 method=normalized_method, url=url, timeout=self.timeout, **kwargs
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError:
+                if buffer_body:
+                    # This request asked for `stream=True`, so the error body is
+                    # still on the socket. Read it so the connection returns to
+                    # the pool and the exception's response keeps a readable
+                    # `.text`. The status is what the caller needs to hear, so a
+                    # body that cannot be read only costs the connection.
+                    try:
+                        _ = response.content
+                    except requests.exceptions.RequestException:
+                        response.close()
+                raise
 
             if verbose:
                 print(
@@ -251,18 +316,21 @@ class HTTPClient:
 
         except requests.exceptions.HTTPError as e:
             if verbose:
-                print(f"[VERBOSE] HTTPError: {e}")
+                print(for_stdout(f"[VERBOSE] HTTPError: {e}"))
             raise ResponseError(f"HTTP error occurred: {e!s}") from e
         except (
             requests.exceptions.ConnectionError,
             requests.exceptions.RetryError,
         ) as e:
             if verbose:
-                print(f"[VERBOSE] ConnectionError: {e}")
+                print(for_stdout(f"[VERBOSE] ConnectionError: {e}"))
             raise HTTPConnectionError(f"Failed to connect to {url}: {e!s}") from e
-        except requests.exceptions.RequestException as e:
+        except (requests.exceptions.RequestException, LocationValueError) as e:
+            # urllib3 raises `LocationValueError` for a host it cannot encode, and
+            # `requests` does not wrap it when the host comes from a redirect or
+            # only fails once the connection is being made.
             if verbose:
-                print(f"[VERBOSE] RequestException: {e}")
+                print(for_stdout(f"[VERBOSE] RequestException: {e}"))
             raise HTTPClientError(f"Request failed: {e!s}") from e
 
     # The seven verb methods below are `make_request` with the method fixed.

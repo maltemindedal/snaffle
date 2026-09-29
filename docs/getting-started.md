@@ -31,7 +31,7 @@ uv sync --group dev
 
 This creates a `.venv/` in the project, installs `requests`, `tqdm`, and
 `urllib3`, installs Snaffle itself in editable mode, and adds the development
-tools (`ruff`, `ty`, `types-requests`).
+tools (`ruff` and `ty`).
 
 ## Step 3. Check the install
 
@@ -81,8 +81,8 @@ Response Body:
 }
 ```
 
-Commands are case-insensitive. `uv run snaffle get https://httpbin.org/get`
-does the same thing.
+Every command also works in lower case: `uv run snaffle get https://httpbin.org/get`
+does the same thing. Mixed case, such as `Get`, is not accepted.
 
 ## Step 5. Send a JSON body
 

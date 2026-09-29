@@ -12,7 +12,8 @@ undo the start-up win recorded in ADR 0002. `tests/test_init.py` guards that.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import io
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 import requests
@@ -54,7 +55,13 @@ def buffer_into(
 
     A bar is drawn only once the response's `Content-Length` reaches `min_size`;
     below that, or when the server sends no length at all, the body is still
-    drained without a bar. A missing length reads as `0`.
+    drained without a bar. A missing or unparsable length reads as `0`.
+
+    The bar counts bytes as they crossed the wire, which is what `Content-Length`
+    counts, so a gzip or Brotli body finishes at 100% rather than running past
+    it. urllib3 reports that through `raw.tell()`. Wherever that is missing or
+    does not behave like a byte count, the bar counts the decoded chunks instead;
+    see `_WireMeter`.
 
     The buffer is written back onto the response and the body marked consumed, so
     `.text` and `.json()` serve it rather than re-reading a drained socket. The
@@ -67,29 +74,90 @@ def buffer_into(
         min_size (int): Minimum `Content-Length` before a bar is drawn.
         desc (str): The description displayed alongside the bar.
     """
-    total = int(response.headers.get("content-length", 0))
+    try:
+        total = int(response.headers.get("content-length", 0))
+    except ValueError:
+        total = 0
     progress_bar = _create_progress_bar(total, min_size, desc)
 
-    chunks: list[bytes] = []
-    append = chunks.append
+    buffer = io.BytesIO()
+    write = buffer.write
     update = progress_bar.update if progress_bar is not None else None
+    meter = _WireMeter(getattr(response, "raw", None))
 
     try:
         for chunk in response.iter_content(chunk_size=chunk_size):
             if not chunk:
                 continue
 
-            append(chunk)
-            if update is not None:
-                update(len(chunk))
+            write(chunk)
+            if update is not None and (step := meter.advance(len(chunk))):
+                update(step)
+
+        # A decoder can hold bytes back until the stream ends.
+        if update is not None and (step := meter.remainder()):
+            update(step)
     finally:
         if progress_bar is not None:
             progress_bar.close()
 
-    response._content = b"".join(chunks)
+    # `getvalue` hands back the buffer itself, trimmed in place, where joining a
+    # list of chunks would build a second body-sized copy.
+    response._content = buffer.getvalue()
     # Mark the body as fully read so `.text`/`.json()` serve the buffer we just
     # built instead of re-reading a drained socket.
-    cast(Any, response)._content_consumed = True
+    response._content_consumed = True
+
+
+class _WireMeter:
+    """Turns decoded chunks into how far the progress bar should advance.
+
+    The bar's total is the `Content-Length`, which counts bytes on the wire, so
+    the bar should advance by wire bytes too. urllib3 reports them through
+    `raw.tell()`, but not always usefully: it stays at zero for a chunked body,
+    and for a response served by a caching session. A stand-in transport may have
+    no `tell()` at all, or one that returns something that is not a count.
+
+    The meter trusts `tell()` only while it behaves like a byte count that has
+    moved: an integer, never decreasing, and above zero once data has arrived.
+    The first time it does not, the meter stops asking and counts decoded bytes.
+    """
+
+    def __init__(self, raw: object) -> None:
+        tell = getattr(raw, "tell", None)
+        self._tell: Callable[[], object] | None = tell if callable(tell) else None
+        self._reported = 0
+
+    def advance(self, decoded: int) -> int:
+        """Returns how far to advance the bar for a chunk of `decoded` bytes."""
+        position = self._wire_position()
+        if position is None:
+            position = self._reported + decoded
+        step = position - self._reported
+        self._reported = position
+        return step
+
+    def remainder(self) -> int:
+        """Returns wire bytes read after the last chunk, such as a trailer."""
+        position = self._wire_position()
+        if position is None:
+            return 0
+        step = position - self._reported
+        self._reported = position
+        return step
+
+    def _wire_position(self) -> int | None:
+        """Returns the byte count from `raw.tell()`, or None if it cannot be trusted."""
+        if self._tell is None:
+            return None
+        try:
+            position = self._tell()
+        except Exception:
+            position = None
+        if not isinstance(position, int) or not position >= max(self._reported, 1):
+            self._tell = None
+            return None
+        return position
 
 
 def _create_progress_bar(total: int, min_size: int, desc: str) -> ProgressBar | None:
