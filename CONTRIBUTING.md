@@ -54,8 +54,12 @@ All four must pass; CI runs them on Python 3.10 through 3.14.
 uv run ruff check .
 uv run ruff format --check .
 uv run ty check
-uv run python -m unittest discover tests
+uv run python -X dev -W error -m unittest discover tests
 ```
+
+The test command turns every warning, including a `ResourceWarning` for a socket
+that was not closed, into a failure. CI syncs with `uv sync --locked`, so a
+change to the dependencies in `pyproject.toml` needs a matching `uv lock`.
 
 To apply formatting: `uv run ruff format .` It also formats the Python code
 blocks in Markdown files, so a badly formatted example in `docs/` fails the check.
