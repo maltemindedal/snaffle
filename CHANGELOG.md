@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   after a failed DNS lookup, and some malformed-URL messages read differently.
   Header values that were folded over several lines are now joined with spaces.
   The exit code of the CLI is `1` either way.
+- A `Retry-After` header is now honoured for at most two minutes per retry. urllib3
+  allows six hours, so a server, or a misconfigured proxy, that answered a `GET`,
+  `HEAD`, `PUT`, `DELETE` or `OPTIONS` with a retryable status and
+  `Retry-After: 99999` held a client with the default three attempts for twelve
+  hours, silently: `--timeout` does not bound the sleep and `-v` prints nothing
+  during it. A server that asks for longer is now waited on for two minutes.
 - The `tqdm` floor is now 4.66.3. 4.66.0 to 4.66.2 are affected by
   `GHSA-g7vv-2v7x-gj9p` (`CVE-2024-34062`, low severity, argument injection in
   the `python -m tqdm` command line). snaffle only calls the `tqdm()` API, so it

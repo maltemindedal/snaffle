@@ -147,6 +147,10 @@ class HTTPClient:
             status_forcelist=sorted(cls.RETRY_STATUSES),
             backoff_factor=0.3,
             respect_retry_after_header=True,
+            # urllib3 allows a server to ask for up to six hours per retry. Two
+            # minutes is its own ceiling for backoff, and long enough for any
+            # sensible rate limit.
+            retry_after_max=120,
             raise_on_status=False,
         )
         adapter = HTTPAdapter(

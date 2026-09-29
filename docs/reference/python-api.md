@@ -232,8 +232,10 @@ except HTTPConnectionError as error:
 ## Retry behaviour
 
 Retries live on the session's `HTTPAdapter` as a `urllib3.util.retry.Retry`
-with `backoff_factor=0.3`, `respect_retry_after_header=True`, and
-`raise_on_status=False`. Which failures are retried depends on the method:
+with `backoff_factor=0.3`, `respect_retry_after_header=True`,
+`retry_after_max=120`, and `raise_on_status=False`. A `Retry-After` header is
+honoured up to two minutes; a server that asks for longer is waited on for two
+minutes. Which failures are retried depends on the method:
 
 | Failure | `GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS` | `POST`, `PATCH` |
 | --- | --- | --- |

@@ -133,7 +133,8 @@ with HTTPClient(timeout=60, retries=5) as client:
 `retries` counts *total attempts*, not retries after the first. `retries=1`
 means one attempt and no retry. Both arguments must be greater than zero.
 
-Retries carry a `backoff_factor` of 0.3 and honour `Retry-After`. Which
+Retries carry a `backoff_factor` of 0.3 and honour `Retry-After` for up to two
+minutes per retry. Which
 failures are retried depends on the method. A `POST` is never replayed once
 the request is on the wire. The table is in the
 [API reference](../reference/python-api.md#retry-behaviour); the reasoning is in
