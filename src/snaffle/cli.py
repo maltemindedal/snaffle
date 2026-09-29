@@ -10,6 +10,7 @@ The HTTP client (and with it ``requests``) is imported lazily so that ``--help``
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 import textwrap
@@ -121,6 +122,40 @@ def _parse_request_kwargs(args: argparse.Namespace) -> RequestKwargs:
     return kwargs
 
 
+# Deeper JSON is printed as received. `json.dumps(indent=4)` writes four spaces
+# per level on every line, so its output grows with the square of the depth.
+# Python 3.13 and 3.14 parse documents far deeper than this, and a 40 KB body
+# nested 20,000 levels would need gigabytes to print. Python 3.10 to 3.12 refuse
+# to parse or print much past this depth already.
+MAX_PRETTY_DEPTH = 1000
+
+
+def _nests_too_deeply(value: Any) -> bool:
+    """Reports whether `value` is nested more than `MAX_PRETTY_DEPTH` levels."""
+    level = [value] if isinstance(value, (list, dict)) else []
+    for _ in range(MAX_PRETTY_DEPTH):
+        level = [
+            child
+            for node in level
+            for child in (node.values() if isinstance(node, dict) else node)
+            if isinstance(child, (list, dict))
+        ]
+        if not level:
+            return False
+    return True
+
+
+def _pretty(text: str) -> str:
+    """Returns `text` indented if it is JSON of sane depth, else unchanged."""
+    # A body nested deeply enough to exhaust the parser raises `RecursionError`,
+    # which is not a `ValueError`.
+    with contextlib.suppress(ValueError, RecursionError):
+        value = json.loads(text)
+        if not _nests_too_deeply(value):
+            return json.dumps(value, indent=4)
+    return text
+
+
 def _emit_response(response: requests.Response) -> None:
     """Prints a formatted HTTP response using a single buffered write."""
     parts = [f"Status Code: {response.status_code}\n", "\nHeaders:\n"]
@@ -129,12 +164,7 @@ def _emit_response(response: requests.Response) -> None:
     text = response.text
     if text.strip():
         parts.append("\nResponse Body:\n")
-        try:
-            parts.append(json.dumps(json.loads(text), indent=4))
-        except (ValueError, RecursionError):
-            # A body nested deeply enough to exhaust the parser raises
-            # `RecursionError`, which is not a `ValueError`. Print it as text.
-            parts.append(text)
+        parts.append(_pretty(text))
         parts.append("\n")
 
     sys.stdout.write(for_stdout("".join(parts)))

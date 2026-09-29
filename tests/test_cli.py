@@ -8,11 +8,12 @@ import subprocess
 import sys
 import unittest
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 from typing_extensions import override
 
-from snaffle.cli import EXAMPLES, main
+from snaffle.cli import EXAMPLES, MAX_PRETTY_DEPTH, _nests_too_deeply, main
 from snaffle.exceptions import HTTPClientError
 
 MAKE_REQUEST = "snaffle.http_client.HTTPClient.make_request"
@@ -121,6 +122,31 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(exit_code, 0)
         self.assertIn("Status Code: 200", output)
         self.assertIn(body, output)
+
+    @patch(MAKE_REQUEST)
+    def test_a_body_nested_past_the_depth_cap_is_not_indented(
+        self, mock_request: MagicMock
+    ) -> None:
+        """Test deep JSON is printed as received rather than pretty-printed.
+
+        Regression: Python 3.13 and 3.14 parse this body, and `indent=4` then
+        writes a line per level with four spaces of indent per level before it.
+        That is about 100 MB for 5,000 levels and gigabytes for 20,000, which
+        ran the CI runner out of memory. Python 3.10 to 3.12 refuse to print it,
+        so the assertion holds on all of them.
+        """
+        body = "[" * 5_000 + "]" * 5_000
+        mock_request.return_value = self._build_response(
+            text=body, headers={"content-type": "application/json"}
+        )
+
+        with patch("sys.stdout", new=io.StringIO()) as fake_stdout:
+            exit_code = main(["GET", "https://api.example.com"])
+
+        output = fake_stdout.getvalue()
+        self.assertEqual(exit_code, 0)
+        self.assertIn(body, output)
+        self.assertLess(len(output), 3 * len(body))
 
     @patch(MAKE_REQUEST)
     def test_lowercase_alias_sends_the_uppercase_method(
@@ -264,6 +290,44 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(
             result.returncode, 0, f"requests was imported on the help path: {result}"
         )
+
+
+class TestNestingDepth(unittest.TestCase):
+    """Test cases for the depth limit on pretty-printed JSON."""
+
+    @staticmethod
+    def _nested(depth: int, *, wrap: bool = False) -> Any:
+        """Builds a value whose deepest container sits `depth` levels down."""
+        value: Any = []
+        for _ in range(depth - 1):
+            value = {"k": value} if wrap else [value]
+        return value
+
+    def test_the_cap_is_inclusive(self) -> None:
+        """Test `MAX_PRETTY_DEPTH` levels pass and one more does not."""
+        self.assertFalse(_nests_too_deeply(self._nested(MAX_PRETTY_DEPTH)))
+        self.assertTrue(_nests_too_deeply(self._nested(MAX_PRETTY_DEPTH + 1)))
+
+    def test_objects_count_as_levels_too(self) -> None:
+        """Test the walk follows dict values as well as list items."""
+        self.assertFalse(_nests_too_deeply(self._nested(MAX_PRETTY_DEPTH, wrap=True)))
+        self.assertTrue(
+            _nests_too_deeply(self._nested(MAX_PRETTY_DEPTH + 1, wrap=True))
+        )
+
+    def test_depth_is_the_deepest_branch_not_the_widest_level(self) -> None:
+        """Test a wide, shallow document is not mistaken for a deep one."""
+        wide = [[{"a": [1, 2, "x"]}] * 50] * 2_000
+        self.assertFalse(_nests_too_deeply(wide))
+        self.assertTrue(
+            _nests_too_deeply([1, "x", self._nested(MAX_PRETTY_DEPTH + 1), None])
+        )
+
+    def test_scalars_and_empty_containers_are_shallow(self) -> None:
+        """Test top-level values that are not containers are never too deep."""
+        for value in (0, "text" * 2_000, None, True, [], {}):
+            with self.subTest(value=value):
+                self.assertFalse(_nests_too_deeply(value))
 
 
 if __name__ == "__main__":
