@@ -57,7 +57,7 @@ Full walkthrough: [Getting started](docs/getting-started.md).
 
 ## Usage
 
-Commands are case-insensitive. `-H` repeats for multiple headers; `-d` takes a
+Commands work in upper or lower case, `GET` or `get`. `-H` repeats for multiple headers; `-d` takes a
 JSON body and sets `Content-Type` for you.
 
 ```bash
