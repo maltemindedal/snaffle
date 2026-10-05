@@ -66,6 +66,7 @@ Outside `docs/`, at the repository root.
 | --- | --- |
 | [README](../README.md) | Overview, quick start, and links to the rest of the documentation. |
 | [CONTRIBUTING](../CONTRIBUTING.md) | Development setup, conventions, the four checks CI runs, and the retry-testing trap. |
+| [SECURITY](../SECURITY.md) | Supported versions, how to report a vulnerability privately, and what is out of scope. |
 | [CHANGELOG](../CHANGELOG.md) | Every user-visible change, [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format, semantic versioning. |
 | [LICENSE](../LICENSE) | MIT License. |
 
