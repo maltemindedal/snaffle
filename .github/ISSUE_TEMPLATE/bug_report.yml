@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Snaffle does not work as documented.
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Snaffle version
+      description: >-
+        Output of `uv run python -c "import snaffle; print(snaffle.__version__)"`.
+        If you run an unreleased commit of `main`, give the commit too.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Python version and operating system
+      placeholder: Python 3.13.1 on Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        The `snaffle` command line, flags included, or a minimal Python script
+        that reproduces the problem, and the server response it needs, if any.
+        Remove tokens and other secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Configuration
+      description: >-
+        Snaffle reads no configuration of its own, but `requests` reads proxy and
+        CA bundle variables from the environment, and credentials from
+        `~/.netrc`. Say which of those apply, and whether the `speedups` extra is
+        installed.
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: >-
+        What Snaffle printed, rerun with `-v` if you can. `-v` redacts only the
+        `Authorization`, `Proxy-Authorization` and `Cookie` request headers, so
+        edit out any other secrets before pasting.
+      render: text

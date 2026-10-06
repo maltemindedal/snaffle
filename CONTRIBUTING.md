@@ -5,6 +5,9 @@ Documentation lives in [`docs/`](docs/README.md); the
 [decision records](docs/architecture/decisions/) explain why the code is shaped
 the way it is.
 
+Everyone taking part in the project follows the
+[code of conduct](CODE_OF_CONDUCT.md).
+
 ## Project layout
 
 ```
