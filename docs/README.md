@@ -71,8 +71,8 @@ Outside `docs/`, at the repository root.
 | [CHANGELOG](../CHANGELOG.md) | Every user-visible change, [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format, semantic versioning. |
 | [LICENSE](../LICENSE) | MIT License. |
 
-`AGENTS.md` is not project documentation. It holds behavioural guidelines for
-LLM coding assistants working in this repository.
+`AGENTS.md` is not project documentation. It holds the commands, conventions
+and gotchas that coding agents need in this repository.
 
 ## Keeping this index accurate
 
