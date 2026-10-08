@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import io
 import re
 import subprocess
@@ -13,7 +14,14 @@ from unittest.mock import MagicMock, patch
 
 from typing_extensions import override
 
-from snaffle.cli import COMMANDS, EXAMPLES, _indent_exceeds, main
+from snaffle.cli import (
+    _PROGRESS_THRESHOLD_MIB,
+    COMMANDS,
+    EXAMPLES,
+    _indent_exceeds,
+    create_parser,
+    main,
+)
 from snaffle.exceptions import HTTPClientError
 from snaffle.http_client import HTTPClient
 
@@ -297,8 +305,6 @@ class TestCLI(unittest.TestCase):
 
     def test_usage_line_is_stable_across_entry_points(self) -> None:
         """Test help output names the command, not whatever launched it."""
-        from snaffle.cli import create_parser
-
         # Python 3.14 styles argparse output on a colour terminal, which puts an
         # escape code in front of "usage:". Only the text is under test.
         usage = re.sub(r"\x1b\[[0-9;]*m", "", create_parser().format_usage())
@@ -316,6 +322,24 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(
             {command.method for command in COMMANDS}, HTTPClient.ALLOWED_METHODS
         )
+
+    def test_the_default_timeout_is_the_clients(self) -> None:
+        """Test a run without `-t` sends the timeout the client defaults to.
+
+        The CLI always passes a timeout, so a default that drifted from the
+        client's would change every request sent without `-t`.
+        """
+        client_default = inspect.signature(HTTPClient).parameters["timeout"].default
+        args = create_parser().parse_args(["GET", "https://api.example.com"])
+
+        self.assertEqual(args.timeout, client_default)
+
+    def test_the_stated_progress_threshold_is_the_clients(self) -> None:
+        """Test the help text and examples state the client's size for a bar."""
+        self.assertEqual(
+            _PROGRESS_THRESHOLD_MIB * 1024 * 1024, HTTPClient.MIN_SIZE_FOR_PROGRESS
+        )
+        self.assertIn(f"larger than {_PROGRESS_THRESHOLD_MIB}MB", EXAMPLES)
 
     def test_help_path_does_not_import_requests(self) -> None:
         """Guard the start-up win: help must not drag in the HTTP stack."""
