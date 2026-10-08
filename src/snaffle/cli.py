@@ -90,6 +90,12 @@ COMMANDS: tuple[Command, ...] = (
     Command("OPTIONS"),
 )
 
+# Two of the client's defaults, which the help text states. The help paths
+# cannot import the client to read them (ADR 0002), so they are repeated here,
+# and `tests/test_cli.py` checks that they still match.
+_DEFAULT_TIMEOUT = 30
+_PROGRESS_THRESHOLD_MIB = 5
+
 
 def _parse_headers(header_args: Sequence[str] | None) -> dict[str, str] | None:
     """Parses repeated header arguments into a dictionary."""
@@ -191,8 +197,8 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         "-t",
         "--timeout",
         type=int,
-        default=30,
-        help="Request timeout in seconds (default: 30)",
+        default=_DEFAULT_TIMEOUT,
+        help=f"Request timeout in seconds (default: {_DEFAULT_TIMEOUT})",
     )
     parser.add_argument(
         "-H",
@@ -249,7 +255,10 @@ def create_parser() -> argparse.ArgumentParser:
             sub.add_argument(
                 "--progress",
                 action="store_true",
-                help="Show progress bar for downloads larger than 5MB",
+                help=(
+                    "Show progress bar for downloads larger than "
+                    f"{_PROGRESS_THRESHOLD_MIB}MB"
+                ),
             )
 
     return parser
