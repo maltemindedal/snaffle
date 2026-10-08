@@ -214,11 +214,14 @@ def create_parser() -> argparse.ArgumentParser:
     Returns:
         argparse.ArgumentParser: The configured argument parser.
     """
+    *others, last = (command.method for command in COMMANDS)
     parser = argparse.ArgumentParser(
         # Pinned so `snaffle`, `python -m snaffle`, and a direct script call all
         # print the same usage line instead of echoing the interpreter path.
         prog="snaffle",
-        description="HTTP CLI client supporting GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS methods",
+        description=(
+            f"HTTP CLI client supporting {', '.join(others)}, and {last} methods"
+        ),
         add_help=True,
     )
 
