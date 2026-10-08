@@ -90,6 +90,12 @@ COMMANDS: tuple[Command, ...] = (
     Command("OPTIONS"),
 )
 
+# Two of the client's defaults, which the help text states. The help paths
+# cannot import the client to read them (ADR 0002), so they are repeated here,
+# and `tests/test_cli.py` checks that they still match.
+_DEFAULT_TIMEOUT = 30
+_PROGRESS_THRESHOLD_MIB = 5
+
 
 def _parse_headers(header_args: Sequence[str] | None) -> dict[str, str] | None:
     """Parses repeated header arguments into a dictionary."""
@@ -191,8 +197,8 @@ def add_common_arguments(parser: argparse.ArgumentParser) -> None:
         "-t",
         "--timeout",
         type=int,
-        default=30,
-        help="Request timeout in seconds (default: 30)",
+        default=_DEFAULT_TIMEOUT,
+        help=f"Request timeout in seconds (default: {_DEFAULT_TIMEOUT})",
     )
     parser.add_argument(
         "-H",
@@ -214,11 +220,14 @@ def create_parser() -> argparse.ArgumentParser:
     Returns:
         argparse.ArgumentParser: The configured argument parser.
     """
+    *others, last = (command.method for command in COMMANDS)
     parser = argparse.ArgumentParser(
         # Pinned so `snaffle`, `python -m snaffle`, and a direct script call all
         # print the same usage line instead of echoing the interpreter path.
         prog="snaffle",
-        description="HTTP CLI client supporting GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS methods",
+        description=(
+            f"HTTP CLI client supporting {', '.join(others)}, and {last} methods"
+        ),
         add_help=True,
     )
 
@@ -246,7 +255,10 @@ def create_parser() -> argparse.ArgumentParser:
             sub.add_argument(
                 "--progress",
                 action="store_true",
-                help="Show progress bar for downloads larger than 5MB",
+                help=(
+                    "Show progress bar for downloads larger than "
+                    f"{_PROGRESS_THRESHOLD_MIB}MB"
+                ),
             )
 
     return parser
