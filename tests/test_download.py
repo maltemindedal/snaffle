@@ -8,8 +8,9 @@ from typing import Any, cast
 from unittest.mock import MagicMock, call, patch
 
 import requests
+from typing_extensions import override
 
-from snaffle._download import buffer_into, should_buffer
+from snaffle._download import buffer_into, release, should_buffer
 
 MIB = 1024 * 1024
 
@@ -286,6 +287,49 @@ class TestBufferInto(unittest.TestCase):
             buffer_into(response, chunk_size=8, min_size=5 * MIB, desc="Download")
 
         mock_tqdm.return_value.close.assert_called_once()
+
+
+class _BrokenBody(io.BytesIO):
+    """A raw stream that fails on the first read, as a truncated body does."""
+
+    @override
+    def read(self, _size: int | None = -1, /) -> bytes:
+        """Raises the error `requests` reports for a body cut off mid-way."""
+        raise requests.exceptions.ChunkedEncodingError("boom")
+
+
+def _error_response(raw: io.BytesIO) -> requests.Response:
+    """Builds an unread 500 response whose body is still on `raw`."""
+    response = requests.Response()
+    response.status_code = 500
+    response.raw = raw
+    return response
+
+
+class TestRelease(unittest.TestCase):
+    """Test cases for reading the error body of a stream the client asked for.
+
+    `TestErrorBodyDrain` and `TestRetryAgainstRealServer` in
+    `tests/test_http_client.py` check the same behaviour against a socket.
+    """
+
+    def test_the_error_body_is_read_and_stays_readable(self) -> None:
+        """Test the body is consumed, so the connection can go back to the pool."""
+        response = _error_response(io.BytesIO(b'{"error": "missing"}'))
+
+        release(response)
+
+        self.assertTrue(cast(Any, response)._content_consumed)
+        self.assertEqual(response.text, '{"error": "missing"}')
+
+    def test_a_body_that_cannot_be_read_closes_the_response(self) -> None:
+        """Test a failed read is not raised, and still frees the connection."""
+        raw = _BrokenBody()
+        response = _error_response(raw)
+
+        release(response)
+
+        self.assertTrue(raw.closed)
 
 
 if __name__ == "__main__":
