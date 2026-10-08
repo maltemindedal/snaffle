@@ -4,7 +4,7 @@ Snaffle is a thin, opinionated layer over `requests` and `urllib3`. It exists to
 make two things convenient: a readable HTTP CLI, and a client whose retry and
 pooling behaviour is decided once rather than at every call site.
 
-It has six modules, no plugins, no configuration files, and no
+It has seven modules, no plugins, no configuration files, and no
 state on disk.
 
 ## System context
@@ -29,8 +29,8 @@ and `urllib3`. There is no database, queue, or service. The artifact is a wheel.
 | `__init__.py` | Public API. Re-exports the exceptions eagerly and resolves `HTTPClient` lazily via PEP 562. |
 | `__main__.py` | Process entry point for both `python -m snaffle` and the `snaffle` console script. The single process-level exit point: it turns `KeyboardInterrupt` into a clean exit, a closed stdout pipe into exit `1`, and `cli.main`'s returned code into the process status. |
 | `cli.py` | Argument parsing, header and body parsing, response rendering, error-to-exit-code mapping. Imports `HTTPClient` only after the help paths have been ruled out. |
-| `http_client.py` | The client: session construction, retry policy, method validation, exception translation. Asks `_download` whether to buffer a body, and hands it the body when the answer is yes. |
-| `_download.py` | Private. Owns the progress-bar download whole: whether to drain, the size threshold, the deferred `tqdm` import, the chunk loop, and writing the buffer back onto the response. |
+| `http_client.py` | The client: session construction, retry policy, method validation, exception translation. Asks `_download` whether to buffer a body, and hands it the response, error or success, when the answer is yes. |
+| `_download.py` | Private. Owns the progress-bar download whole: whether to drain, the size threshold, the deferred `tqdm` import, the chunk loop, writing the buffer back onto the response, and reading an error body that the stream left on the socket. |
 | `_terminal.py` | Private. Escapes control characters in text the server chose (headers, a text body, error messages) when stdout is a terminal, so a response cannot drive it. Imports only `sys`. |
 | `exceptions.py` | Three exception classes. No dependencies, not even on `requests`. |
 
@@ -139,12 +139,15 @@ progress bar is being fed. A caller who passes `stream=True` explicitly still
 gets an unconsumed response: their request wins over the bar, because a bar is
 fed by reading the body and reading it is what they asked to do themselves.
 
-That whole decision lives in `_download.should_buffer`, not in `make_request`.
-Draining crosses that module boundary three times. It forces `stream=True`,
-writes `response._content`, and writes `response._content_consumed`. Keeping
-these operations in one named module avoids four inline branches. An earlier
-revision had it inline, and the `stream=True` opt-out above was documented in three
-places while the code did the opposite.
+That decision lives in `_download.should_buffer`, not in `make_request`, and so
+does the handling of the body that follows from it. `make_request` does two
+things with the answer: it sets `stream=True`, and it hands the response back to
+`_download` once the status is known.
+`_download.buffer_into` drains a success, writing `response._content` and
+`response._content_consumed`. `_download.release` reads an error body, so the
+connection returns to the pool and `.text` stays readable on the exception. An
+earlier revision had the decision inline, and the `stream=True` opt-out above
+was documented in three places while the code did the opposite.
 
 ### The distribution is typed
 

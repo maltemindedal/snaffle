@@ -13,8 +13,9 @@ from unittest.mock import MagicMock, patch
 
 from typing_extensions import override
 
-from snaffle.cli import EXAMPLES, _indent_exceeds, main
+from snaffle.cli import COMMANDS, EXAMPLES, _indent_exceeds, main
 from snaffle.exceptions import HTTPClientError
+from snaffle.http_client import HTTPClient
 
 MAKE_REQUEST = "snaffle.http_client.HTTPClient.make_request"
 
@@ -302,6 +303,19 @@ class TestCLI(unittest.TestCase):
         # escape code in front of "usage:". Only the text is under test.
         usage = re.sub(r"\x1b\[[0-9;]*m", "", create_parser().format_usage())
         self.assertTrue(usage.startswith("usage: snaffle"), usage)
+
+    def test_every_command_is_a_method_the_client_accepts(self) -> None:
+        """Test the CLI's subcommands and the client's methods are the same set.
+
+        The methods are listed twice, in `COMMANDS` and in
+        `HTTPClient.ALLOWED_METHODS`, because the CLI cannot import the client on
+        its help path (ADR 0002). A subcommand the client rejects fails only when
+        it is run, and a method missing from `COMMANDS` cannot be sent from the
+        command line.
+        """
+        self.assertEqual(
+            {command.method for command in COMMANDS}, HTTPClient.ALLOWED_METHODS
+        )
 
     def test_help_path_does_not_import_requests(self) -> None:
         """Guard the start-up win: help must not drag in the HTTP stack."""

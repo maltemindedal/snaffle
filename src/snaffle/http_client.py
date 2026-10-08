@@ -16,7 +16,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.exceptions import LocationValueError
 from urllib3.util.retry import Retry
 
-from snaffle._download import buffer_into, should_buffer
+from snaffle._download import buffer_into, release, should_buffer
 from snaffle._terminal import for_stdout
 from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 
@@ -269,7 +269,8 @@ class HTTPClient:
         # Whether the body is worth streaming and draining ourselves is
         # `_download`'s decision, including the opt-out for a caller who passed
         # `stream=True` and will read the body themselves. All this method does
-        # is switch the transport into streaming mode when the answer is yes.
+        # is switch the transport into streaming mode when the answer is yes,
+        # then hand the response back to `_download` once the status is known.
         buffer_body = should_buffer(normalized_method, self.show_progress, kwargs)
         if buffer_body:
             kwargs["stream"] = True
@@ -288,15 +289,7 @@ class HTTPClient:
                 response.raise_for_status()
             except requests.exceptions.HTTPError:
                 if buffer_body:
-                    # This request asked for `stream=True`, so the error body is
-                    # still on the socket. Read it so the connection returns to
-                    # the pool and the exception's response keeps a readable
-                    # `.text`. The status is what the caller needs to hear, so a
-                    # body that cannot be read only costs the connection.
-                    try:
-                        _ = response.content
-                    except requests.exceptions.RequestException:
-                        response.close()
+                    release(response)
                 raise
 
             if verbose:

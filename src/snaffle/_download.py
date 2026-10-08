@@ -2,8 +2,10 @@
 
 `snaffle.http_client` delegates a single decision here: whether the client
 should ask for an unread body and drain it itself, so that a progress bar can be
-fed as the bytes arrive. The size threshold, deferred `tqdm` import, chunk loop,
-and write-back of the buffered body onto the response all live in this module.
+fed as the bytes arrive. Everything that follows from a yes lives in this module
+too: the size threshold, the deferred `tqdm` import, the chunk loop, the
+write-back of the buffered body onto the response, and the read of an error
+body that the stream left on the socket.
 
 The module is private. It is reachable only through `snaffle.http_client`, which
 is itself imported lazily, so importing `requests` at module scope here does not
@@ -107,6 +109,26 @@ def buffer_into(
     # Mark the body as fully read so `.text`/`.json()` serve the buffer we just
     # built instead of re-reading a drained socket.
     response._content_consumed = True
+
+
+def release(response: requests.Response) -> None:
+    """Reads the body of an error response so its connection returns to the pool.
+
+    A request that `should_buffer` approved is sent with `stream=True`, so when
+    its status is an error the body is still on the socket and the connection is
+    still checked out. Reading the body frees the connection and keeps `.text`
+    readable on the response that the error carries.
+
+    The status is what the caller needs to hear, so a body that cannot be read
+    only costs the connection: the response is closed and nothing is raised.
+
+    Args:
+        response (requests.Response): The unread error response.
+    """
+    try:
+        _ = response.content
+    except requests.exceptions.RequestException:
+        response.close()
 
 
 class _WireMeter:
