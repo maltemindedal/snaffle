@@ -107,7 +107,7 @@ src/snaffle/   The package (import name: snaffle). src-layout, so tests
 tests/         One unittest module per source module.
 docs/          All documentation. Start at docs/README.md.
 .github/       CI: lint, format, ty, tests on Python 3.10-3.14, wheel build.
-.agents/       Skill definitions for LLM coding assistants.
+.agents/       Project skills for coding agents (verify-snaffle).
 ```
 
 The package is fully typed and ships a PEP 561 `py.typed` marker, so downstream
