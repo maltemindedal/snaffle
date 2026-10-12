@@ -27,6 +27,13 @@ uv run python -X dev -W error -m unittest discover tests
 uv build
 ```
 
+End-to-end check with kept evidence (the gate above, then `snaffle GET`
+against a local server; see `.agents/skills/verify-snaffle/SKILL.md`):
+
+```bash
+.agents/skills/verify-snaffle/scripts/verify.sh all
+```
+
 One class, or one method:
 
 ```bash
@@ -132,8 +139,6 @@ agent prose to get it):
   `RetryError`; the `__cause__` is `requests.exceptions.ConnectionError`.
 - The `github-advanced-security` check fails for platform reasons (model
   support, quota) that no repository change fixes. Say so in the PR.
-- `.agents/skills/dataverse-python-production-code` is written for the
-  Dataverse SDK. Where its retry advice differs, ADR 0001 governs here.
 
 ## Docs
 
