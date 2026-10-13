@@ -124,10 +124,31 @@ agent prose to get it):
 - PR bodies give the exact verification commands with their results, and name
   any judgement call (such as whether a change is breaking) for the owner.
 
+## Cursor Cloud specific instructions
+
+- `.cursor/environment.json` installs uv 0.12.17 into `/usr/local/bin` and
+  runs `/usr/local/bin/uv` explicitly, so an older uv earlier on `PATH` does
+  not trigger a reinstall on every start. It also installs `unzip`, which the
+  wheel check in `verify.sh` needs.
+- The uv pin lives in two places: the `install` script in
+  `.cursor/environment.json` and `version:` under `astral-sh/setup-uv` in
+  `.github/workflows/ci.yml`. Change both together;
+  `tests/test_tooling_pins.py` fails when they differ.
+- Sync with `uv sync --locked --group dev --extra speedups`, as CI does.
+- Python is not pinned: uv picks the newest interpreter it finds (3.13 on the
+  cloud image), while CI tests 3.10 to 3.14. Do not add a `.python-version`
+  or another pin unless the pin test covers it.
+- No services are needed. The CLI check starts its own `http.server` on a free
+  127.0.0.1 port and stops it.
+- The gate is `.agents/skills/verify-snaffle/scripts/verify.sh all`; it must
+  end in `RESULT: PASS (all)`.
+
 ## Gotchas
 
 - `ruff format --check .` covers Markdown too, this file and `.agents/skills/`
   included, so a badly formatted Python code block in any `.md` file fails CI.
+- The uv version is pinned in `.cursor/environment.json` and
+  `.github/workflows/ci.yml`; `tests/test_tooling_pins.py` keeps them equal.
 - Commit `uv.lock` with any version or dependency change in `pyproject.toml`,
   made by `uv lock`. A plain `uv run` rewrites the lock silently, and CI's
   `uv sync --locked` fails on every leg when it is stale.
