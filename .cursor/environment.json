@@ -1,4 +1,4 @@
 {
   "name": "snaffle",
-  "install": "set -euo pipefail\nif ! command -v uv >/dev/null 2>&1 || [ \"$(uv --version | awk '{print $2}')\" != \"0.12.17\" ]; then\n  tmp=\"$(mktemp)\"\n  curl -LsSf -o \"$tmp\" https://astral.sh/uv/0.12.17/install.sh\n  sudo UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh \"$tmp\"\n  rm -f \"$tmp\"\nfi\nuv sync --locked --group dev --extra speedups\n"
+  "install": "set -euo pipefail\nUV=/usr/local/bin/uv\nif [ ! -x \"$UV\" ] || [ \"$(\"$UV\" --version | awk '{print $2}')\" != \"0.12.17\" ]; then\n  tmp=\"$(mktemp)\"\n  curl -LsSf -o \"$tmp\" https://astral.sh/uv/0.12.17/install.sh\n  sudo UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh \"$tmp\"\n  rm -f \"$tmp\"\nfi\nif ! command -v unzip >/dev/null 2>&1; then\n  sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq unzip\nfi\n\"$UV\" sync --locked --group dev --extra speedups\n"
 }
