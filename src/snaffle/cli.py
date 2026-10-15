@@ -99,7 +99,7 @@ _PROGRESS_THRESHOLD_MIB = 5
 
 def _parse_headers(header_args: Sequence[str] | None) -> dict[str, str] | None:
     """Parses repeated header arguments into a dictionary."""
-    if not header_args:
+    if header_args is None or len(header_args) == 0:
         return None
 
     headers: dict[str, str] = {}
@@ -122,7 +122,7 @@ def _parse_request_kwargs(args: argparse.Namespace) -> RequestKwargs:
         kwargs["json"] = json.loads(data)
 
     headers = _parse_headers(getattr(args, "header", None))
-    if headers:
+    if headers is not None:
         kwargs["headers"] = headers
 
     return kwargs
