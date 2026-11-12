@@ -84,8 +84,8 @@ class ProgressBar(Protocol):
 class HTTPClient:
     """Send HTTP requests through a pooled session.
 
-    The client supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS. Its
-    settings control timeouts, retries, verbose logging, and download progress.
+    The client accepts the methods in :attr:`ALLOWED_METHODS`. Its settings
+    control timeouts, retries, verbose logging, and download progress.
 
     Connections are pooled across requests, so a client owns an operating-system
     resource. Use it as a context manager, or call :meth:`close`, to release the
@@ -111,9 +111,8 @@ class HTTPClient:
       methods only, so a ``POST`` that may already have been processed is never
       replayed.
 
-    The backoff means a request that is going to fail takes longer to say so
-    (roughly half a second extra across the default three attempts) in exchange
-    for not hammering a server that is already struggling.
+    The backoff means a request that is going to fail takes longer to say so, in
+    exchange for not hammering a server that is already struggling.
 
     Attributes:
         timeout (int): The request timeout in seconds.
@@ -326,10 +325,10 @@ class HTTPClient:
                 print(for_stdout(f"[VERBOSE] RequestException: {e}"))
             raise HTTPClientError(f"Request failed: {e!s}") from e
 
-    # The seven verb methods below are `make_request` with the method fixed.
+    # The verb methods below are `make_request` with the method fixed.
     # They carry no behaviour of their own, so they do not restate its contract:
     # arguments, return value and exceptions are documented once, there and in
-    # `docs/reference/python-api.md`, rather than seven times over here.
+    # `docs/reference/python-api.md`, rather than once per verb here.
 
     def get(self, url: str, **kwargs: Any) -> requests.Response:
         """Sends a GET request. See :meth:`make_request` for the contract."""

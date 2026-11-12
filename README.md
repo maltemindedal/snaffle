@@ -10,9 +10,8 @@ A command-line HTTP client, and the Python library behind it.
 Snaffle makes one-off HTTP requests from a terminal readable: send a request,
 get the status, headers, and a pretty-printed body. The same client is
 importable, so a script that outgrows the command line does not have to change
-tools. It supports GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS, pools
-connections across requests, and retries only the failures that are worth
-retrying.
+tools. It pools connections across requests, and retries only the failures
+that are worth retrying.
 
 ```bash
 snaffle GET https://httpbin.org/get
@@ -30,8 +29,8 @@ uv sync --group dev
 uv run snaffle HELP
 ```
 
-That last command prints the usage line, the seven method commands, and eleven
-worked examples. If you see it, Snaffle works.
+That last command prints the commands and some worked examples. If you see it,
+Snaffle works.
 
 Then make a request:
 
@@ -57,8 +56,8 @@ Full walkthrough: [Getting started](docs/getting-started.md).
 
 ## Usage
 
-Commands work in upper or lower case, `GET` or `get`. `-H` repeats for multiple headers; `-d` takes a
-JSON body and sets `Content-Type` for you.
+`-H` repeats for multiple headers; `-d` takes a JSON body and sets
+`Content-Type` for you.
 
 ```bash
 snaffle POST https://httpbin.org/post \
@@ -93,7 +92,7 @@ the open connection.
 | [Use as a library](docs/guides/using-as-a-library.md) | Batching, error handling, custom bodies, tuning. |
 | [Download large files](docs/guides/downloading-large-files.md) | Progress bars and streaming. |
 | [Troubleshooting](docs/guides/troubleshooting.md) | Symptom-first fixes. |
-| [CLI reference](docs/reference/cli.md) | Every command, flag, and exit code. |
+| [CLI reference](docs/reference/cli.md) | Behaviour beyond `--help`, exit codes, security notes. |
 | [Python API reference](docs/reference/python-api.md) | `HTTPClient`, constants, exceptions. |
 | [Architecture](docs/architecture/overview.md) | How it fits together, and why. |
 
@@ -106,7 +105,7 @@ src/snaffle/   The package (import name: snaffle). src-layout, so tests
                exercise the installed distribution.
 tests/         One unittest module per source module.
 docs/          All documentation. Start at docs/README.md.
-.github/       CI: lint, format, ty, tests on Python 3.10-3.14, wheel build.
+.github/       CI: lint, format, ty, tests on every supported Python, wheel build.
 .agents/       Project skills for coding agents (verify-snaffle).
 ```
 
@@ -115,7 +114,7 @@ type checkers use its annotations without extra configuration.
 
 ## Contributing
 
-Setup, conventions, and the four checks CI runs are in
+Setup, conventions, and the checks CI runs are in
 [CONTRIBUTING.md](CONTRIBUTING.md). Changes are recorded in
 [CHANGELOG.md](CHANGELOG.md).
 

@@ -4,8 +4,7 @@ Snaffle is a thin, opinionated layer over `requests` and `urllib3`. It exists to
 make two things convenient: a readable HTTP CLI, and a client whose retry and
 pooling behaviour is decided once rather than at every call site.
 
-It has seven modules, no plugins, no configuration files, and no
-state on disk.
+It has no plugins, no configuration files, and no state on disk.
 
 ## System context
 
@@ -27,12 +26,12 @@ and `urllib3`. There is no database, queue, or service. The artifact is a wheel.
 | Module | Responsibility |
 | --- | --- |
 | `__init__.py` | Public API. Re-exports the exceptions eagerly and resolves `HTTPClient` lazily via PEP 562. |
-| `__main__.py` | Process entry point for both `python -m snaffle` and the `snaffle` console script. The single process-level exit point: it turns `KeyboardInterrupt` into a clean exit, a closed stdout pipe into exit `1`, and `cli.main`'s returned code into the process status. |
+| `__main__.py` | Process entry point for both `python -m snaffle` and the `snaffle` console script. The single process-level exit point: it turns `KeyboardInterrupt` into a clean exit, a closed stdout pipe into a failure exit, and `cli.main`'s returned code into the process status. |
 | `cli.py` | Argument parsing, header and body parsing, response rendering, error-to-exit-code mapping. Imports `HTTPClient` only after the help paths have been ruled out. |
 | `http_client.py` | The client: session construction, retry policy, method validation, exception translation. Asks `_download` whether to buffer a body, and hands it the response, error or success, when the answer is yes. |
 | `_download.py` | Private. Owns the progress-bar download whole: whether to drain, the size threshold, the deferred `tqdm` import, the chunk loop, writing the buffer back onto the response, and reading an error body that the stream left on the socket. |
 | `_terminal.py` | Private. Escapes control characters in text the server chose (headers, a text body, error messages) when stdout is a terminal, so a response cannot drive it. Imports only `sys`. |
-| `exceptions.py` | Three exception classes. No dependencies, not even on `requests`. |
+| `exceptions.py` | The exception classes. No dependencies, not even on `requests`. |
 
 The run-time dependency graph is acyclic and shallow. `exceptions` and
 `_terminal` depend on nothing; `_download` depends on the HTTP stack;
@@ -97,7 +96,7 @@ never handle a `requests` type. The original remains on `__cause__`.
 ### One client, one connection pool
 
 A client holds a `requests.Session` with an `HTTPAdapter` mounted on both
-schemes, pooling up to `POOL_SIZE` (16) connections. A second request to a host
+schemes, pooling up to `POOL_SIZE` connections. A second request to a host
 skips the TCP and TLS handshake.
 
 The cost is that a client owns an OS resource and must be closed. This is a

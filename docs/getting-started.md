@@ -39,15 +39,11 @@ tools (`ruff` and `ty`).
 uv run snaffle HELP
 ```
 
-You should see the top-level usage line, the list of commands, and then eleven
+You should see the top-level usage line, the list of commands, and then
 numbered examples:
 
 ```
 usage: snaffle [-h]
-               {HELP,help,GET,get,POST,post,PUT,put,PATCH,patch,DELETE,delete,HEAD,head,OPTIONS,options} ...
-
-HTTP CLI client supporting GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS
-methods
 ...
 ```
 
@@ -81,12 +77,24 @@ Response Body:
 }
 ```
 
-Every command also works in lower case: `uv run snaffle get https://httpbin.org/get`
-does the same thing. Mixed case, such as `Get`, is not accepted.
+Every command also works in lower case. Mixed case, such as `Get`, is refused:
+
+```console
+$ uv run snaffle get --help
+usage: snaffle GET ...
+$ echo $?
+0
+$ uv run snaffle Get --help
+usage: snaffle [-h]
+...
+snaffle: error: argument command: invalid choice: 'Get' ...
+$ echo $?
+2
+```
 
 ## Step 5. Send a JSON body
 
-`POST`, `PUT`, and `PATCH` take `-d` with a JSON document. Wrap the whole
+A method that sends a body takes `-d` with a JSON document. Wrap the whole
 document in single quotes so your shell leaves the double quotes alone:
 
 ```bash
@@ -132,8 +140,8 @@ what Snaffle sent.
 
 ## Step 8. Watch an error
 
-Snaffle treats a non-2xx status as an error. It exits `1` and prints a message
-instead of the body:
+Snaffle treats a non-2xx status as an error. It prints a message instead of
+the body and exits with a failure code:
 
 ```bash
 uv run snaffle GET https://httpbin.org/status/404
@@ -143,9 +151,9 @@ uv run snaffle GET https://httpbin.org/status/404
 Error: HTTP error occurred: 404 Client Error: NOT FOUND for url: https://httpbin.org/status/404
 ```
 
-A `404` costs exactly one round trip. Only connection failures and the
-transient statuses `408, 425, 429, 500, 502, 503, 504` are retried. Retrying a
-`404` would only multiply the latency of an answer that will not change.
+A `404` is not retried. Only connection failures and the transient statuses in
+`HTTPClient.RETRY_STATUSES` are. Retrying a `404` would only multiply the
+latency of an answer that will not change.
 
 ## Step 9. Use it from Python
 
@@ -179,7 +187,7 @@ TLS handshake entirely.
   error handling, and custom bodies.
 - [Downloading large files](guides/downloading-large-files.md) covers progress
   bars and streaming.
-- [CLI reference](reference/cli.md) lists every flag.
-- [Python API reference](reference/python-api.md) lists every argument,
-  constant, and exception.
+- [CLI reference](reference/cli.md) covers exit codes and security notes.
+- [Python API reference](reference/python-api.md) covers the arguments,
+  constants, and exceptions.
 - [Troubleshooting](guides/troubleshooting.md) covers common failures.

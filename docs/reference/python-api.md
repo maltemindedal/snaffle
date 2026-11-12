@@ -1,6 +1,7 @@
 # Python API reference
 
-The public API is `snaffle.HTTPClient` and three exception classes. The package
+The public API is `snaffle.HTTPClient` and the exception classes in
+`snaffle.__all__`. The package
 ships a PEP 561 `py.typed` marker, so downstream type checkers use its
 annotations without extra configuration.
 
@@ -37,13 +38,15 @@ call `close()`.
 
 ### Constructor arguments
 
-| Argument | Type | Default | Effect |
-| --- | --- | --- | --- |
-| `timeout` | `int` | `30` | Seconds before a request times out. Must be `> 0`; `ValueError` otherwise. |
-| `retries` | `int` | `3` | Total attempts for a failed request, not retries after the first. Must be `> 0`; `ValueError` otherwise. Translated to `urllib3.util.retry.Retry(total=retries - 1)`. |
-| `verbose` | `bool` | `False` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. The values of `Authorization`, `Proxy-Authorization` and `Cookie` headers and of the `auth`, `cookies` and `proxies` arguments are shown as `<redacted>`; everything else, including `data`, `params` and the URL, is shown as given. |
-| `show_progress` | `bool` | `False` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. A caller who passes `stream=True` opts out; see [`make_request`](#make_request). |
-| `session` | `requests.Session \| None` | `None` | The session to send through. `None` builds the pooled, retrying session described above. A session passed here is used exactly as it arrives; see below. |
+The defaults are in the signature above.
+
+| Argument | Type | Effect |
+| --- | --- | --- |
+| `timeout` | `int` | Seconds before a request times out. Must be `> 0`; `ValueError` otherwise. |
+| `retries` | `int` | Total attempts for a failed request, not retries after the first. Must be `> 0`; `ValueError` otherwise. Translated to `urllib3.util.retry.Retry(total=retries - 1)`. |
+| `verbose` | `bool` | Print the outgoing request, the response status and headers, and the underlying `requests` exception behind any failure, each prefixed `[VERBOSE]`. The values of `Authorization`, `Proxy-Authorization` and `Cookie` headers and of the `auth`, `cookies` and `proxies` arguments are shown as `<redacted>`; everything else, including `data`, `params` and the URL, is shown as given. |
+| `show_progress` | `bool` | Stream `GET` responses and draw a `tqdm` bar once `Content-Length` reaches `MIN_SIZE_FOR_PROGRESS`. A caller who passes `stream=True` opts out; see [`make_request`](#make_request). |
+| `session` | `requests.Session \| None` | The session to send through. `None` builds the pooled, retrying session described above. A session passed here is used exactly as it arrives; see below. |
 
 Validation runs in `__init__`, before any network access.
 
@@ -93,13 +96,15 @@ arbitrary attributes.
 
 ### Class constants
 
-| Constant | Value | Effect |
-| --- | --- | --- |
-| `ALLOWED_METHODS` | `frozenset({"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"})` | Any other method raises `ValueError` before a socket is opened. |
-| `DOWNLOAD_CHUNK_SIZE` | `65536` (64 KiB) | Chunk size for streamed reads. Larger chunks mean fewer syscalls and fewer progress-bar refreshes per megabyte, at the cost of a larger in-flight working set. |
-| `MIN_SIZE_FOR_PROGRESS` | `5 * 1024 * 1024` (5 MiB) | Minimum `Content-Length` before a progress bar is drawn. The comparison is `>=`. |
-| `RETRY_STATUSES` | `frozenset({408, 425, 429, 500, 502, 503, 504})` | Statuses eligible for retry. See [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md). |
-| `POOL_SIZE` | `16` | `pool_connections` and `pool_maxsize` on the mounted adapter. |
+Read a value from the class itself, such as `HTTPClient.RETRY_STATUSES`.
+
+| Constant | Effect |
+| --- | --- |
+| `ALLOWED_METHODS` | The methods a client accepts. Any other method raises `ValueError` before a socket is opened. |
+| `DOWNLOAD_CHUNK_SIZE` | Chunk size in bytes for streamed reads. Larger chunks mean fewer syscalls and fewer progress-bar refreshes per megabyte, at the cost of a larger in-flight working set. |
+| `MIN_SIZE_FOR_PROGRESS` | Minimum `Content-Length` in bytes before a progress bar is drawn. The comparison is `>=`. |
+| `RETRY_STATUSES` | Statuses eligible for retry. See [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md). |
+| `POOL_SIZE` | `pool_connections` and `pool_maxsize` on the mounted adapter. |
 
 These are class attributes, so subclassing overrides them for all instances of
 the subclass:
@@ -120,10 +125,8 @@ class BigChunkClient(HTTPClient):
 client.get(url: str, **kwargs: Any) -> requests.Response
 ```
 
-Thin wrappers over `make_request` with the method fixed. Every keyword argument
-is forwarded to `requests.Session.request`. This includes `json=`, `data=`,
-`headers=`, `params=`, `stream=`, `allow_redirects=`, and all other supported
-arguments.
+Thin wrappers over `make_request` with the method fixed. They take the same
+keyword arguments, such as `json=`, `data=`, `headers=` and `params=`.
 
 #### `make_request`
 
@@ -131,7 +134,7 @@ arguments.
 client.make_request(method: str, url: str, **kwargs: Any) -> requests.Response
 ```
 
-The single path all seven wrappers take. It validates and upper-cases `method`,
+The single path every verb wrapper takes. It validates and upper-cases `method`,
 sets `stream=True` when it is going to feed a progress bar, sends the request
 with the client's `timeout`, calls `raise_for_status()`, and translates
 `requests` exceptions into this package's hierarchy.
@@ -158,38 +161,46 @@ Raises:
 | Exception | When |
 | --- | --- |
 | `ValueError` | `method` is not in `allowed_methods`. Raised before any network access. |
-| `ResponseError` | The response carried a 4xx or 5xx status, including a retryable status that was still failing on the last attempt. |
-| `HTTPConnectionError` | The connection was refused, unresolvable, or timed out while being established, or the adapter exhausted its retries on a connection error. Also a read timeout on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS` while waiting for the response, which is retried and, once the attempts are spent, ends as a connection error, and a read timeout while the body is being read, for every method, which is not retried. |
-| `HTTPClientError` | Any other `requests.RequestException`, such as a read timeout on a `POST` or `PATCH` while waiting for the response, too many redirects, or a malformed URL, and urllib3's `LocationValueError` for a host it cannot parse. |
+| `ResponseError` | The response carried a 4xx or 5xx status. |
+| `HTTPConnectionError` | `requests` reported a connection error, or the retries for one ran out. |
+| `HTTPClientError` | Any other failure `requests` reports, and urllib3's `LocationValueError` for a host it cannot parse. |
 
-Two boundaries are easy to get wrong:
+A retryable status that is still failing on the last attempt is a
+`ResponseError` carrying that status. The adapter is built with
+`raise_on_status=False`, so urllib3 returns the last response rather than a
+generic retry error, and the real status is more useful to a caller.
 
-- **Exhausted status retries become `ResponseError`, not `HTTPConnectionError`.**
-  The adapter is built with `raise_on_status=False`, so when a `503` is still a
-  `503` on the final attempt urllib3 returns that response rather than raising.
-  `raise_for_status()` then turns it into a `ResponseError` carrying the real
-  status, which is more useful than a generic connection failure. Only
-  *connection* retries exhaust into `RetryError`, and that is what the
-  `HTTPConnectionError` row above refers to.
-- **A connect timeout is an `HTTPConnectionError` for every method. A read
-  timeout depends on the method, and on when it strikes.**
-  `requests.exceptions.ConnectTimeout` subclasses `ConnectionError`, so it is
-  caught as a connection failure. A read timeout *while waiting for the response*
-  on `GET`, `HEAD`, `PUT`, `DELETE` or `OPTIONS` is retried; when the attempts
-  are spent urllib3 raises `MaxRetryError`, which `requests` turns into a
-  `ConnectionError`, so it is an `HTTPConnectionError` too. A `POST` or `PATCH`
-  is never replayed after a read failure, so its `ReadTimeout` reaches the
-  general case and is an `HTTPClientError`. A server that stopped answering
-  therefore reports `Failed to connect to ...` for a `GET`.
-- **A timeout after the headers is a connection error and is not retried.**
-  Once the status line has arrived the request is under way, so a server that
-  sends the headers and part of the body and then goes silent raises
-  `requests.exceptions.ConnectionError` from the body read, for every method,
-  after one attempt. That is an `HTTPConnectionError` even for a `POST` or
-  `PATCH`. It happens inside `make_request` for an ordinary call, which reads the
-  body before returning, and while draining the body when `show_progress` is on.
-  With `stream=True` you read the body yourself, after `make_request` has
-  returned, and the exception is `requests`' own.
+A timeout is the case that is easy to get wrong. Which exception it becomes
+depends on the method and on when it strikes, because a `POST` or `PATCH` is
+never replayed after a read failure and so never exhausts its retries. These
+examples run in the test suite:
+
+```pycon
+>>> import socket
+>>> from snaffle import HTTPClient
+>>> silent = socket.create_server(("127.0.0.1", 0))  # accepts, never answers
+>>> url = "http://127.0.0.1:%d/" % silent.getsockname()[1]
+>>> with HTTPClient(timeout=1, retries=1) as client:
+...     client.get(url)
+Traceback (most recent call last):
+HTTPConnectionError: Failed to connect to ...
+>>> with HTTPClient(timeout=1, retries=1) as client:
+...     client.post(url)
+Traceback (most recent call last):
+HTTPClientError: Request failed: ...
+>>> silent.close()
+>>> with HTTPClient(timeout=1, retries=1) as client:  # now nothing listens
+...     client.post(url)
+Traceback (most recent call last):
+HTTPConnectionError: Failed to connect to ...
+```
+
+A server that sends the headers and then goes silent part-way through the body
+raises `requests.exceptions.ConnectionError` from the body read, for every
+method, and is not retried. It happens inside `make_request` for an ordinary
+call, which reads the body before returning, and while draining the body when
+`show_progress` is on. With `stream=True` you read the body yourself, after
+`make_request` has returned, and the exception is `requests`' own.
 
 #### `close`
 
@@ -252,26 +263,11 @@ except HTTPConnectionError as error:
 
 ## Retry behaviour
 
-Retries live on the session's `HTTPAdapter` as a `urllib3.util.retry.Retry`
-with `backoff_factor=0.3`, `respect_retry_after_header=True`,
-`retry_after_max=120`, and `raise_on_status=False`. A `Retry-After` header is
-honoured up to two minutes; a server that asks for longer is waited on for two
-minutes. Which failures are retried depends on the method:
-
-| Failure | `GET`, `HEAD`, `PUT`, `DELETE`, `OPTIONS` | `POST`, `PATCH` |
-| --- | --- | --- |
-| Connection never established | retried | **retried** |
-| Read failure after the request landed | retried | not retried |
-| Status in `RETRY_STATUSES` | retried | not retried |
-| Any other status (404, 401, ...) | not retried | not retried |
-
-The rationale is in [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
-
-`raise_on_status=False` decides what a caller sees when retries run out: a
-status that never recovered comes back as a response and becomes a
-`ResponseError`, while a connection that never succeeded raises `RetryError`
-inside the adapter and becomes an `HTTPConnectionError`. See
-[Raises](#make_request) above.
+Retries live on the session's `HTTPAdapter` as a `urllib3.util.retry.Retry`,
+built in `HTTPClient._build_session`. Which failures are retried depends on the
+method. The table and its rationale are in
+[ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md),
+and `TestRetryPolicy` in `tests/test_http_client.py` pins it.
 
 Because retries happen inside the adapter, mocking `requests.Session.request`
 cannot observe them. A test that needs to see them substitutes the session
