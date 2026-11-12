@@ -62,7 +62,7 @@ def _policy_for(attempts: int) -> Retry:
     """Returns the retry policy carried by a default client built for `attempts`.
 
     `attempts` counts total attempts, the same way `HTTPClient(retries=...)`
-    does -- not the way urllib3's `Retry.total` does, which is one fewer.
+    does, not the way urllib3's `Retry.total` does, which is one fewer.
     """
     with HTTPClient(retries=attempts) as client:
         return cast(Retry, _adapter_of(client).max_retries)
@@ -88,8 +88,8 @@ class _QuietHandler(BaseHTTPRequestHandler):
 class _LocalServerTestCase(unittest.TestCase):
     """Base for tests that need a real socket. Subclasses supply `handler`.
 
-    A real server is the only way to observe some of what this package promises
-    -- retries happen below `Session.request`, and only a socket has a body to
+    A real server is the only way to observe some of what this package promises:
+    retries happen below `Session.request`, and only a socket has a body to
     drain, so two test classes need one. The shared setup lives here rather
     than in both.
     """
@@ -135,8 +135,8 @@ class TestHTTPClient(unittest.TestCase):
 
         Asserting the entire call pins two things besides the delegation: the
         client's timeout reaches the session, and no `stream=True` is added
-        without a progress bar -- streaming would only hold the connection open
-        for longer.
+        without a progress bar (streaming would only hold the connection open
+        for longer).
         """
         mock_request.return_value.status_code = 200
 
@@ -522,7 +522,7 @@ class TestInjectedSession(unittest.TestCase):
     `patch("requests.Session.request")` substitutes below this interface and
     above the adapter, so it cannot see a retry. A session passed to the
     constructor is substituted at the interface and keeps urllib3's machinery
-    underneath it -- which is what `TestRetryWithoutASocket` uses.
+    underneath it, which is what `TestRetryWithoutASocket` uses.
     """
 
     def test_an_injected_session_carries_the_request(self) -> None:
@@ -570,10 +570,10 @@ class TestInjectedSession(unittest.TestCase):
 class TestRetryPolicy(unittest.TestCase):
     """Retry behaviour exercised against the real urllib3 machinery.
 
-    These deliberately avoid mocking `Session.request`: that mock sits above the
+    These avoid mocking `Session.request`: that mock sits above the
     adapter, so it cannot observe retries at all. An earlier revision claimed
     "a POST is never silently re-sent" on the strength of such a mock, and the
-    claim was wrong -- urllib3 filters read errors and statuses by method, but
+    claim was wrong: urllib3 filters read errors and statuses by method, but
     retries connection errors for every method.
     """
 
@@ -835,7 +835,7 @@ class TestRetryAgainstRealServer(_LocalServerTestCase):
         response.close()
 
 
-#: Deliberately over `MIN_SIZE_FOR_PROGRESS`, so the progress path is fully live.
+#: Over `MIN_SIZE_FOR_PROGRESS` on purpose, so the progress path is fully live.
 LARGE_BODY = b"snaffle!" * (6 * 1024 * 1024 // 8)
 
 
@@ -866,7 +866,7 @@ class TestProgressAgainstRealServer(_LocalServerTestCase):
 
         `_content_consumed` is the assertion that separates the two cases.
         `iter_content` re-slices an already-buffered body, so it yields the full
-        payload either way -- it cannot tell a live socket from a drained one.
+        payload either way, so it cannot tell a live socket from a drained one.
         The flag is what the API reference documents, so it is the contract.
         The bar on stderr is the same difference, made visible.
         """
