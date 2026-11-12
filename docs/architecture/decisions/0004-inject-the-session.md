@@ -83,6 +83,11 @@ is still correct above the adapter, and rewriting them would have churned every
 test in the module for no change in what is covered. The trap they can fall
 into is unchanged, and so is the warning in `CONTRIBUTING.md`.
 
+**Update, 2026-11-12.** The eleven tests now pass a session with a recording
+adapter mounted on it, and none patches `requests.Session.request`.
+`tests/test_guard_no_session_patch.py` fails the build when a test patches it,
+so the trap is closed by a check rather than by the warning.
+
 **The public interface now names a `requests` type.** This is the real cost.
 [ADR 0002](0002-lazy-imports-on-the-cli-help-path.md) works to keep `requests`
 off the import path, and `HTTPClient.__init__` now has a parameter annotated

@@ -159,8 +159,9 @@ Downstream type checkers use the annotations with no configuration.
 Tests are `unittest`, one module per source module. They split into four
 kinds:
 
-- Most client and CLI tests mock `Session.request`. This is fast and correct for
-  anything *above* the adapter.
+- Client tests pass a session with a recording adapter mounted on it, and CLI
+  tests mock `HTTPClient.make_request`. No test patches `Session.request`, and
+  `tests/test_guard_no_session_patch.py` fails the build when one does.
 - `TestRetryPolicy` checks `urllib3.util.retry.Retry` directly and verifies the
   policy object without any I/O.
 - `TestInjectedSession` and

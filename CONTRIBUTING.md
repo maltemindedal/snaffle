@@ -74,11 +74,11 @@ blocks in Markdown files, so a badly formatted example in `docs/` fails the chec
 Type checking is `ty` with every rule at error level (`[tool.ty.rules]
 all = "error"` in `pyproject.toml`), over both `src/` and `tests/`.
 
-Do not mock `requests.Session.request` when the behaviour under test involves
-retries. That mock sits *above* the adapter where urllib3's retry logic lives,
-so it cannot observe retries. An earlier revision shipped a false claim
-about `POST` retry behaviour on exactly that mistake. Three ways to test retries
-without it:
+No test patches `requests.Session.request`, and
+`tests/test_guard_no_session_patch.py` fails the build when one does. That mock
+sits *above* the adapter where urllib3's retry logic lives, so it cannot
+observe retries. An earlier revision shipped a false claim about `POST` retry
+behaviour on exactly that mistake. Three ways to test without it:
 
 - Pass a session: `HTTPClient(session=...)` substitutes the transport at the
   client's own interface rather than below it, so the adapter and its retry
