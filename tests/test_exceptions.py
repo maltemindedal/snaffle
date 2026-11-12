@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import unittest
 
+from tests._isolation import setUpModule  # noqa: F401
+
 from snaffle.exceptions import HTTPClientError
 
 

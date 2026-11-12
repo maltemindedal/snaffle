@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from tests._isolation import setUpModule  # noqa: F401
 from typing_extensions import override
 
 from snaffle.cli import (

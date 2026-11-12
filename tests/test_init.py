@@ -7,6 +7,8 @@ import sys
 import unittest
 from importlib.metadata import version
 
+from tests._isolation import setUpModule  # noqa: F401
+
 import snaffle
 
 

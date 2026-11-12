@@ -8,6 +8,7 @@ from typing import Any, cast
 from unittest.mock import MagicMock, call, patch
 
 import requests
+from tests._isolation import setUpModule  # noqa: F401
 from typing_extensions import override
 
 from snaffle._download import buffer_into, release, should_buffer
