@@ -54,7 +54,7 @@ doctor() {
   if uv run --no-sync python -c 'import sys; sys.exit(sys.version_info < (3, 10))'; then echo "  PASS python $pv >= 3.10"; else echo "  FAIL python $pv < 3.10"; return 1; fi
 }
 
-# CI's test job in order, then the wheel's py.typed check.
+# CI's test job in order, the changelog job, then the wheel's py.typed check.
 test_gate() {
   gate lint uv run --no-sync ruff check .
   gate format uv run --no-sync ruff format --check .
@@ -63,6 +63,7 @@ test_gate() {
   expect "unittest reports OK" "$ART/unittest.stderr" '^OK'
   grep -E '^Ran [0-9]+ tests' "$ART/unittest.stderr" | sed 's/^/  /'
   if grep -E 'ResourceWarning' "$ART/unittest.stderr" >/dev/null; then echo "  FAIL unclosed-resource warning in test output"; FAILED=1; fi
+  gate changelog "$ROOT/.agents/skills/verify-snaffle/scripts/changelog.sh"
   rm -rf "$ART/dist"
   gate build uv build --out-dir "$ART/dist"
   if unzip -l "$ART"/dist/*.whl 2>/dev/null | grep -E 'snaffle/py\.typed$' >/dev/null; then echo "  PASS wheel ships snaffle/py.typed"; else echo "  FAIL wheel lacks snaffle/py.typed"; FAILED=1; fi
