@@ -49,6 +49,19 @@ Every step leaves `<name>.cmd`, `.stdout`, `.stderr` and `.exit` under
 The test step also fails on any `ResourceWarning` in the unittest output,
 because `-W error` does not fail the run on an unclosed socket (see `AGENTS.md`).
 
+## Replay
+
+`replay.sh <sha> [guard ...]` checks out an older commit into a temporary
+worktree, copies in today's `tests/test_guard_*.py` and `tests/_isolation.py`,
+and runs each guard against that commit's own `src/`. It prints PASS or FAIL per
+guard, with the first findings. A guard that FAILs on a commit that held a past
+mistake shows the guard would have caught it. The exit status is 0 whenever the
+replay ran.
+
+```bash
+.agents/skills/verify-snaffle/scripts/replay.sh 1e4c26c test_guard_public_modules
+```
+
 ## Cleanup
 
 `verify.sh cleanup` (also run by `all`, and by `cli` itself) kills only the
