@@ -10,8 +10,9 @@ A command-line HTTP client, and the Python library behind it.
 Snaffle makes one-off HTTP requests from a terminal readable: send a request,
 get the status, headers, and a pretty-printed body. The same client is
 importable, so a script that outgrows the command line does not have to change
-tools. It pools connections across requests, and retries only the failures
-that are worth retrying.
+tools. It supports <!-- generated: methods -->GET, POST, PUT, PATCH, DELETE, HEAD, and OPTIONS<!-- end -->, pools
+connections across requests, and retries only the failures that are worth
+retrying.
 
 ```bash
 snaffle GET https://httpbin.org/get
@@ -92,7 +93,7 @@ the open connection.
 | [Use as a library](docs/guides/using-as-a-library.md) | Batching, error handling, custom bodies, tuning. |
 | [Download large files](docs/guides/downloading-large-files.md) | Progress bars and streaming. |
 | [Troubleshooting](docs/guides/troubleshooting.md) | Symptom-first fixes. |
-| [CLI reference](docs/reference/cli.md) | Behaviour beyond `--help`, exit codes, security notes. |
+| [CLI reference](docs/reference/cli.md) | Every command and flag, exit codes, security notes. |
 | [Python API reference](docs/reference/python-api.md) | `HTTPClient`, constants, exceptions. |
 | [Architecture](docs/architecture/overview.md) | How it fits together, and why. |
 
