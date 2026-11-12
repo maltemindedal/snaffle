@@ -5,7 +5,7 @@ description: Verify Snaffle, the `requests`-based HTTP CLI and `HTTPClient` libr
 
 # verify-snaffle
 
-Snaffle's surface is a short-lived CLI (`snaffle <METHOD> <url>`) and the
+Snaffle is a short-lived CLI (`snaffle <METHOD> <url>`) and the
 importable `HTTPClient`. There is no long-running app: launch means
 `uv sync --locked --group dev --extra speedups`, and each drive is one
 `snaffle` process against a `python3 -m http.server` the script starts on a free

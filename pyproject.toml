@@ -57,7 +57,7 @@ dev = [
 ]
 
 [tool.ty.rules]
-# Every rule at error level -- the strictest configuration ty offers.
+# Every rule at error level, the strictest configuration ty offers.
 all = "error"
 
 [tool.ruff]
