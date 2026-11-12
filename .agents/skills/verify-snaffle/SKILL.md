@@ -27,7 +27,7 @@ interpreter. Run it first whenever a result looks odd. `all` stops if it fails.
 ## Drive
 
 ```bash
-.agents/skills/verify-snaffle/scripts/verify.sh test     # ruff, format, ty, unittest -X dev -W error, build + py.typed
+.agents/skills/verify-snaffle/scripts/verify.sh test     # ruff, format, ty, unittest -X dev -W error, changelog, build + py.typed
 .agents/skills/verify-snaffle/scripts/verify.sh cli      # snaffle --help, GET 200, GET 404 on a local server
 .agents/skills/verify-snaffle/scripts/verify.sh all      # doctor, test, cli, cleanup
 ```
@@ -60,6 +60,18 @@ replay ran.
 
 ```bash
 .agents/skills/verify-snaffle/scripts/replay.sh 1e4c26c test_guard_public_modules
+```
+
+## Changelog
+
+`changelog.sh [BASE [HEAD]]` fails when `src/snaffle/` differs from BASE (the
+merge-base with `origin/main` by default) and the `## [Unreleased]` section of
+`CHANGELOG.md` does not. A change no user can notice ends a commit message
+between BASE and HEAD with the trailer `Changelog: none (<reason>)`. The test
+step and CI's `changelog` job run it.
+
+```bash
+.agents/skills/verify-snaffle/scripts/changelog.sh 20d954d^ 20d954d  # FAIL: session= with no entry
 ```
 
 ## Cleanup
