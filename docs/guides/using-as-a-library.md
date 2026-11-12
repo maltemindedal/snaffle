@@ -139,7 +139,8 @@ means one attempt and no retry. Both arguments must be greater than zero.
 
 Retries back off exponentially and honour a capped `Retry-After`. Which
 failures are retried depends on the method. A `POST` is never replayed once
-the request is on the wire. The table and the reasoning are in
+the request is on the wire. The values and the table are in the
+[API reference](../reference/python-api.md#retry-behaviour); the reasoning is in
 [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
 
 ## Change the defaults for a whole application

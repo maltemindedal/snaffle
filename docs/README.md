@@ -26,13 +26,13 @@ For a specific goal, when you already know your way around.
 
 ## Reference
 
-Factual, and short: each points at the code or the help text that holds the
-full list. Not meant to be read end to end.
+Factual. The tables that list what the code holds are generated from it. Not
+meant to be read end to end.
 
 | Document | What it covers | Who it is for |
 | --- | --- | --- |
-| [CLI reference](reference/cli.md) | Where to find the commands and flags, behaviour `--help` does not cover, output format, exit codes, security notes, options unavailable through the CLI. | Anyone writing a command line or a script. |
-| [Python API reference](reference/python-api.md) | `HTTPClient` constructor arguments, attributes, class constants, and methods; the exception hierarchy, with run examples of how timeouts map. | Developers integrating the library. |
+| [CLI reference](reference/cli.md) | Every command, alias and flag (generated from the parser), behaviour `--help` does not cover, output format, exit codes, security notes, options unavailable through the CLI. | Anyone writing a command line or a script. |
+| [Python API reference](reference/python-api.md) | `HTTPClient` constructor arguments, attributes, class constants, and methods; the exception hierarchy, with run examples of how timeouts map; the generated retry table. | Developers integrating the library. |
 
 There is no configuration reference: Snaffle itself reads no environment
 variables and no configuration files. Configure it with CLI flags, constructor

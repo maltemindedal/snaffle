@@ -94,12 +94,14 @@ Public API and versions:
   `uv lock`, dates the `CHANGELOG.md` `[Unreleased]` section (with its link
   reference) below a fresh empty one, and updates the table in `SECURITY.md`.
 
-Docs keep reasons, decisions and how-to. They do not copy what the code
-states: a count, a constant's value, a default, a status list, a method list or
-`--help` output. Name the code instead ("the statuses in
-`HTTPClient.RETRY_STATUSES`", "`snaffle GET --help` shows the default"). A
-behaviour claim that must stay in prose goes in a `console` or `pycon` block on
-a page listed in `PAGES` in `tests/test_docs.py`, which runs it.
+Docs keep reasons, decisions and how-to. They do not copy by hand what the
+code states: a count, a constant's value, a default, a status list, a method
+list or `--help` output. Name the code instead ("the statuses in
+`HTTPClient.RETRY_STATUSES`"), or, for a fact a reader needs on the page, add a
+block to `BLOCKS` in `tests/test_docs_sync.py` and run
+`uv run python -m tests.test_docs_sync --write`. A behaviour claim that must
+stay in prose goes in a `console` or `pycon` block on a page listed in `PAGES`
+in `tests/test_docs.py`, which runs it.
 
 Update in the same change as the code:
 
@@ -108,8 +110,9 @@ Update in the same change as the code:
   and ADR 0001 when the decision itself changes.
 - A new HTTP method or CLI flag: `HTTPClient.ALLOWED_METHODS` and a verb
   method, or the argument and its help text in `cli.py`, plus `COMMANDS` and
-  `EXAMPLES`. `docs/reference/cli.md` changes only if the flag has behaviour
-  its help text cannot say.
+  `EXAMPLES`, then `uv run python -m tests.test_docs_sync --write`.
+  `docs/reference/cli.md` changes by hand only if the flag has behaviour its
+  help text cannot say.
 - The supported Python range: the CI matrix, `requires-python`, classifiers and
   ruff `target-version`, plus the mentions in `README.md`, `CONTRIBUTING.md`
   and `docs/getting-started.md`.

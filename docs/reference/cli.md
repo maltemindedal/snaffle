@@ -1,16 +1,17 @@
 # CLI reference
 
-How `snaffle` behaves beyond what its help text says. The help text is the
-reference for commands and flags, because it is generated from the code:
+Every command and flag `snaffle` accepts, and how it behaves beyond what its
+help text says. The commands and flags tables are generated from the parser:
+`uv run python -m tests.test_docs_sync --write` rewrites them, and the tests fail
+when they differ from the code. The examples on this page are run by
+`tests/test_docs.py`, so they show what the program does. For the help text
+itself:
 
 ```bash
 snaffle --help          # every command
 snaffle GET --help      # the flags and defaults of one command
 snaffle HELP            # the top-level help and worked examples
 ```
-
-The examples on this page are run by `tests/test_docs.py`, so they show what
-the program does.
 
 ## Invocation
 
@@ -27,6 +28,21 @@ three handle `Ctrl+C` identically. They print `Operation cancelled by user` and
 exit `0` rather than raising a traceback.
 
 ## Commands
+
+<!-- generated: cli-commands -->
+
+| Command | Alias | Takes `-d` | Takes `--progress` |
+| --- | --- | --- | --- |
+| `HELP` | `help` | no | no |
+| `GET` | `get` | no | yes |
+| `POST` | `post` | yes | no |
+| `PUT` | `put` | yes | no |
+| `PATCH` | `patch` | yes | no |
+| `DELETE` | `delete` | no | no |
+| `HEAD` | `head` | no | no |
+| `OPTIONS` | `options` | no | no |
+
+<!-- end -->
 
 A command is spelled in upper case or in lower case. Other spellings are
 rejected:
@@ -49,6 +65,19 @@ top-level help followed by the numbered examples. None of these paths import
 `requests`. See [ADR 0002](../architecture/decisions/0002-lazy-imports-on-the-cli-help-path.md).
 
 ## Options
+
+<!-- generated: cli-flags -->
+
+| Flag | Value | Default | Commands |
+| --- | --- | --- | --- |
+| `url` | `URL` | required | every method |
+| `-t`, `--timeout` | `TIMEOUT`, an integer | `30` | every method |
+| `-H`, `--header` | `HEADER`, repeatable | not set | every method |
+| `-v`, `--verbose` | none | off | every method |
+| `--progress` | none | off | `GET` |
+| `-d`, `--data` | `DATA` | not set | `POST`, `PUT`, `PATCH` |
+
+<!-- end -->
 
 ### `-d`, `--data`
 
