@@ -13,6 +13,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tests._isolation import setUpModule  # noqa: F401
+
 TESTS = Path(__file__).resolve().parent
 
 FIXTURE = (

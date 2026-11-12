@@ -6,7 +6,6 @@ import contextlib
 import gzip
 import importlib.util
 import io
-import os
 import random
 import socketserver
 import threading
@@ -19,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 from requests.adapters import HTTPAdapter
+from tests._isolation import setUpModule  # noqa: F401
 from typing_extensions import override
 from urllib3.connectionpool import HTTPConnectionPool
 from urllib3.exceptions import (
@@ -34,22 +34,6 @@ from snaffle.http_client import HTTPClient
 #: Patched where it is used, not where it is defined: `http_client` imports the
 #: name. What it does with a body is `tests/test_download.py`'s business.
 BUFFER_INTO = "snaffle.http_client.buffer_into"
-
-
-def setUpModule() -> None:
-    """Keeps the machine's proxy settings out of these tests.
-
-    `requests` reads `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` from the
-    environment. On a machine that sets them, the loopback requests here, and
-    even urllib3's URL errors, would go through the proxy and fail for reasons
-    that say nothing about the code.
-    """
-    saved = patch.dict(os.environ)
-    saved.start()
-    unittest.addModuleCleanup(saved.stop)
-    for name in ("http_proxy", "https_proxy", "all_proxy"):
-        os.environ.pop(name, None)
-        os.environ.pop(name.upper(), None)
 
 
 def _adapter_of(client: HTTPClient, url: str = "http://x") -> Any:

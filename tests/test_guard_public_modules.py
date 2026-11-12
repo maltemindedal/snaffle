@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 import unittest
 
+from tests._isolation import setUpModule  # noqa: F401
+
 import snaffle
 
 #: Public name to the module that defines it. `ProgressBar` is public through
