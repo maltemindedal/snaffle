@@ -94,18 +94,25 @@ Public API and versions:
   `uv lock`, dates the `CHANGELOG.md` `[Unreleased]` section (with its link
   reference) below a fresh empty one, and updates the table in `SECURITY.md`.
 
-Update the docs in the same change as the code:
+Docs keep reasons, decisions and how-to. They do not copy what the code
+states: a count, a constant's value, a default, a status list, a method list or
+`--help` output. Name the code instead ("the statuses in
+`HTTPClient.RETRY_STATUSES`", "`snaffle GET --help` shows the default"). A
+behaviour claim that must stay in prose goes in a `console` or `pycon` block on
+a page listed in `PAGES` in `tests/test_docs.py`, which runs it.
 
-- Retry or exception behaviour: the `HTTPClient` class docstring,
-  `docs/reference/python-api.md`, ADR 0001, `docs/architecture/overview.md`
-  and `docs/guides/using-as-a-library.md`.
+Update in the same change as the code:
+
+- Retry or exception behaviour: the tests that pin it (`TestRetryPolicy`,
+  `TestRetryWithoutASocket`, the examples in `docs/reference/python-api.md`),
+  and ADR 0001 when the decision itself changes.
 - A new HTTP method or CLI flag: `HTTPClient.ALLOWED_METHODS` and a verb
-  method, `COMMANDS` and `EXAMPLES` in `cli.py`, the counts in `README.md`, and
-  the `--help` blocks pasted into `docs/reference/cli.md` (regenerate them from
-  real output).
+  method, or the argument and its help text in `cli.py`, plus `COMMANDS` and
+  `EXAMPLES`. `docs/reference/cli.md` changes only if the flag has behaviour
+  its help text cannot say.
 - The supported Python range: the CI matrix, `requires-python`, classifiers and
-  ruff `target-version`, plus the mentions in `README.md`, `CONTRIBUTING.md`,
-  `docs/getting-started.md` and `docs/reference/cli.md`.
+  ruff `target-version`, plus the mentions in `README.md`, `CONTRIBUTING.md`
+  and `docs/getting-started.md`.
 - A new file under `docs/` gets a row in `docs/README.md`.
 - User-visible changes go in `CHANGELOG.md` under `## [Unreleased]`, in
   `### Security`, `Fixed`, `Changed`, `Added` or `Removed`, as full paragraphs
@@ -156,8 +163,6 @@ agent prose to get it):
   `CONTRIBUTING.md` says: the leak prints an `Exception ignored` line naming
   `ResourceWarning`, and the run still reports `OK`. Open clients in tests with
   `with HTTPClient(...)`, and read the output for that line.
-- `docs/reference/python-api.md` says exhausted connection retries raise
-  `RetryError`; the `__cause__` is `requests.exceptions.ConnectionError`.
 - The `github-advanced-security` check fails for platform reasons (model
   support, quota) that no repository change fixes. Say so in the PR.
 
