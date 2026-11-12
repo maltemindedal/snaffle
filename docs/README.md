@@ -12,7 +12,7 @@ For a first pass. Read top to bottom, at a keyboard.
 
 | Document | What it covers | Who it is for |
 | --- | --- | --- |
-| [Getting started](getting-started.md) | Clone to first request in nine steps: install with uv, make CLI requests, send a JSON body, add headers, read an error, then do the same from Python. | Anyone using Snaffle for the first time. |
+| [Getting started](getting-started.md) | Clone to first request, step by step: install with uv, make CLI requests, send a JSON body, add headers, read an error, then do the same from Python. | Anyone using Snaffle for the first time. |
 
 ## How-to guides
 
@@ -26,12 +26,13 @@ For a specific goal, when you already know your way around.
 
 ## Reference
 
-Exhaustive and factual. Not meant to be read end to end.
+Factual. The tables that list what the code holds are generated from it. Not
+meant to be read end to end.
 
 | Document | What it covers | Who it is for |
 | --- | --- | --- |
-| [CLI reference](reference/cli.md) | Every command, alias, and flag; output format; exit codes; security notes; options unavailable through the CLI. | Anyone writing a command line or a script. |
-| [Python API reference](reference/python-api.md) | `HTTPClient` constructor arguments, attributes, class constants, and methods; the exception hierarchy; the retry table. | Developers integrating the library. |
+| [CLI reference](reference/cli.md) | Every command, alias and flag (generated from the parser), behaviour `--help` does not cover, output format, exit codes, security notes, options unavailable through the CLI. | Anyone writing a command line or a script. |
+| [Python API reference](reference/python-api.md) | `HTTPClient` constructor arguments, attributes, class constants, and methods; the exception hierarchy, with run examples of how timeouts map; the generated retry table. | Developers integrating the library. |
 
 There is no configuration reference: Snaffle itself reads no environment
 variables and no configuration files. Configure it with CLI flags, constructor
@@ -47,7 +48,7 @@ way it is.
 
 | Document | What it covers | Who it is for |
 | --- | --- | --- |
-| [Architecture overview](architecture/overview.md) | System context and request-flow diagrams, module responsibilities, the four design commitments, testing strategy, and explicit non-goals. | Contributors, and anyone deciding whether Snaffle fits. |
+| [Architecture overview](architecture/overview.md) | System context and request-flow diagrams, module responsibilities, the design commitments, testing strategy, and explicit non-goals. | Contributors, and anyone deciding whether Snaffle fits. |
 
 ### Decision records
 
@@ -65,7 +66,7 @@ Outside `docs/`, at the repository root.
 | Document | What it covers |
 | --- | --- |
 | [README](../README.md) | Overview, quick start, and links to the rest of the documentation. |
-| [CONTRIBUTING](../CONTRIBUTING.md) | Development setup, conventions, the four checks CI runs, and the retry-testing trap. |
+| [CONTRIBUTING](../CONTRIBUTING.md) | Development setup, conventions, the checks CI runs, and the retry-testing trap. |
 | [CODE_OF_CONDUCT](../CODE_OF_CONDUCT.md) | Contributor Covenant 3.0, and how to report a violation. |
 | [SECURITY](../SECURITY.md) | Supported versions, how to report a vulnerability privately, and what is out of scope. |
 | [CHANGELOG](../CHANGELOG.md) | Every user-visible change, [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format, semantic versioning. |

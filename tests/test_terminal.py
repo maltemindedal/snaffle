@@ -7,6 +7,7 @@ import tracemalloc
 import unittest
 from unittest.mock import MagicMock, patch
 
+from tests._isolation import setUpModule  # noqa: F401
 from typing_extensions import override
 
 from snaffle._terminal import for_stdout

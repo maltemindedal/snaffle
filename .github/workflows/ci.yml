@@ -62,3 +62,16 @@ jobs:
               sys.exit(f"py.typed missing from {wheel}: {names}")
           print(f"{wheel} ships py.typed")
           PY
+
+  changelog:
+    # Fails when src/snaffle/ changed and CHANGELOG.md [Unreleased] did not.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The check diffs against the merge-base with origin/main.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the changelog
+        run: .agents/skills/verify-snaffle/scripts/changelog.sh

@@ -12,6 +12,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from tests._isolation import setUpModule  # noqa: F401
 from typing_extensions import override
 
 from snaffle.__main__ import run
@@ -187,9 +188,6 @@ class TestUnusualStdout(unittest.TestCase):
         self.assertNotIn("Traceback", result.stderr)
 
 
-_PROXY_VARIABLES = frozenset({"http_proxy", "https_proxy", "all_proxy"})
-
-
 class _Stubborn:
     """A stdout on the default error handler that will not be reconfigured."""
 
@@ -233,15 +231,12 @@ class TestStdoutEncoding(unittest.TestCase):
     ) -> subprocess.CompletedProcess[str]:
         """Runs the real entry point with a stdout of the given encoding.
 
-        The machine's proxy settings are dropped, as `test_http_client` does for
-        its own tests: the child talks to a server on the loopback interface, and
-        through a proxy that request fails for reasons that are not under test.
+        The child inherits `os.environ`, which `tests._isolation` has cleared of
+        the machine's proxy settings: it talks to a server on the loopback
+        interface, and through a proxy that request fails for reasons that are
+        not under test.
         """
-        env = {
-            k: v
-            for k, v in os.environ.items()
-            if k != "PYTHONUTF8" and k.lower() not in _PROXY_VARIABLES
-        }
+        env = {k: v for k, v in os.environ.items() if k != "PYTHONUTF8"}
         env["PYTHONIOENCODING"] = encoding
         return subprocess.run(
             [sys.executable, "-m", "snaffle", *args],

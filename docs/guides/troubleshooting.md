@@ -75,7 +75,8 @@ uv run snaffle GET https://httpbin.org/headers -H "Accept: application/json" -H 
 ## `Error: HTTP error occurred: 404 Client Error...`
 
 Not a bug. Snaffle calls `raise_for_status()`, so any 4xx or 5xx is an error:
-it exits `1` and prints the message instead of the response body.
+it prints the message instead of the response body and exits with a failure
+code ([exit codes](../reference/cli.md#exit-codes)).
 
 To inspect the body of an error response, use the Python API and catch it:
 
@@ -93,12 +94,10 @@ with HTTPClient() as client:
 
 DNS failure, a refused connection, an unreachable host, or a timeout while the
 connection was still being established. A server that accepted the connection
-and then stopped answering ends here too for a `GET`, `HEAD`, `PUT`, `DELETE` or
-`OPTIONS`, once its retries are spent: the read timeout is retried and then
-reported as a connection failure. So does one that sent the headers and then
-went silent part-way through the body, for every method, but that is not
-retried: the response was already under way. Check the URL, then run with `-v` to
-see exactly what was attempted and which `requests` exception was behind it.
+and then stopped answering can end here too, depending on the method; the
+[Python API reference](../reference/python-api.md#make_request) shows which.
+Check the URL, then run with `-v` to see exactly what was attempted and which
+`requests` exception was behind it.
 
 A connection failure is retried for every method, including `POST`: a request
 that never reached the server cannot have been acted on twice.
@@ -110,23 +109,23 @@ the last response is reported rather than discarded. See the
 
 ## A request hangs, then fails
 
-The default timeout is 30 seconds. Lower it to fail faster:
+`snaffle GET --help` shows the default timeout. Lower it to fail faster:
 
 ```bash
 uv run snaffle GET https://slow.example.com -t 5
 ```
 
-Note that the timeout is per attempt. With the default three attempts and
-exponential backoff, a request against a server that keeps failing takes
-longer than the timeout alone, with roughly half a second of backoff on
-top. The CLI has no flag for the retry count; use the
+Note that the timeout is per attempt. With several attempts and exponential
+backoff between them, a request against a server that keeps failing takes
+longer than the timeout alone. The CLI has no flag for the retry count; use the
 [Python API](../reference/python-api.md) with `retries=1` if you need one shot.
 
 ## `--progress` shows no bar
 
 Three possibilities:
 
-1. The response is smaller than 5 MiB (`MIN_SIZE_FOR_PROGRESS`).
+1. The response is smaller than the size `snaffle GET --help` names
+   (`HTTPClient.MIN_SIZE_FOR_PROGRESS`).
 2. The server sent no `Content-Length` header, so the total reads as `0`.
 3. stderr is redirected. `tqdm` writes there, not to stdout.
 
@@ -138,7 +137,7 @@ The download completes either way.
 error: unrecognized arguments: --progress
 ```
 
-`--progress` exists on `GET` only. No other method accepts it.
+Only the commands whose `--help` lists `--progress` accept it.
 
 ## Retries do not happen in my test
 

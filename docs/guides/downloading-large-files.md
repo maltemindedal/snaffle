@@ -12,7 +12,7 @@ uv run snaffle GET https://example.com/large-file.zip --progress
 ```
 
 The bar appears only if the response's `Content-Length` header is at least
-5 MiB. Smaller responses download without one. If the server sends no
+`HTTPClient.MIN_SIZE_FOR_PROGRESS` bytes. Smaller responses download without one. If the server sends no
 `Content-Length`, the size reads as `0` and no bar is drawn. The download
 still completes.
 
@@ -47,9 +47,8 @@ with HTTPClient() as client:
             handle.write(chunk)
 ```
 
-Memory stays bounded at one chunk. `HTTPClient.DOWNLOAD_CHUNK_SIZE` is 64 KiB,
-which is the size the client itself uses; you can pick anything for your own
-loop.
+Memory stays bounded at one chunk. `HTTPClient.DOWNLOAD_CHUNK_SIZE` is the size
+the client itself uses; you can pick anything for your own loop.
 
 The connection is not returned to the pool until the body is fully read or the
 response is closed. Consume it promptly, or close it.
@@ -137,8 +136,8 @@ for having both.
 Without `show_progress`, `GET` does not stream at all: `requests` reads the body
 in one pass and returns the connection to the pool immediately, and no response
 is left streaming with nothing reading it. That read is not the faster one for
-large bodies. `requests` reads in 10 KiB chunks, so draining in
-`DOWNLOAD_CHUNK_SIZE` chunks is quicker from about 1 MiB up. See
+large bodies, because `requests` reads in smaller chunks than
+`DOWNLOAD_CHUNK_SIZE`. See
 [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
 
 ## Make large text responses smaller

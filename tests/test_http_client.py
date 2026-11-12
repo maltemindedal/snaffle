@@ -6,7 +6,6 @@ import contextlib
 import gzip
 import importlib.util
 import io
-import os
 import random
 import socketserver
 import threading
@@ -19,6 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import requests
 from requests.adapters import HTTPAdapter
+from tests._isolation import setUpModule  # noqa: F401
 from typing_extensions import override
 from urllib3.connectionpool import HTTPConnectionPool
 from urllib3.exceptions import (
@@ -31,26 +31,9 @@ from urllib3.util.retry import Retry
 from snaffle.exceptions import HTTPClientError, HTTPConnectionError, ResponseError
 from snaffle.http_client import HTTPClient
 
-SESSION_REQUEST = "requests.Session.request"
 #: Patched where it is used, not where it is defined: `http_client` imports the
 #: name. What it does with a body is `tests/test_download.py`'s business.
 BUFFER_INTO = "snaffle.http_client.buffer_into"
-
-
-def setUpModule() -> None:
-    """Keeps the machine's proxy settings out of these tests.
-
-    `requests` reads `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` from the
-    environment. On a machine that sets them, the loopback requests here, and
-    even urllib3's URL errors, would go through the proxy and fail for reasons
-    that say nothing about the code.
-    """
-    saved = patch.dict(os.environ)
-    saved.start()
-    unittest.addModuleCleanup(saved.stop)
-    for name in ("http_proxy", "https_proxy", "all_proxy"):
-        os.environ.pop(name, None)
-        os.environ.pop(name.upper(), None)
 
 
 def _adapter_of(client: HTTPClient, url: str = "http://x") -> Any:
@@ -62,10 +45,59 @@ def _policy_for(attempts: int) -> Retry:
     """Returns the retry policy carried by a default client built for `attempts`.
 
     `attempts` counts total attempts, the same way `HTTPClient(retries=...)`
-    does -- not the way urllib3's `Retry.total` does, which is one fewer.
+    does, not the way urllib3's `Retry.total` does, which is one fewer.
     """
     with HTTPClient(retries=attempts) as client:
         return cast(Retry, _adapter_of(client).max_retries)
+
+
+class _RecordingAdapter(HTTPAdapter):
+    """A transport that answers from memory and records what it was asked for.
+
+    Mounted on a session handed to `HTTPClient`, it replaces the network without
+    patching anything. It sits below `Session.request`, so a session's own
+    machinery (header preparation, cookies, `raise_for_status` input) still
+    runs. Give it a `failure` to raise that instead of answering.
+    """
+
+    def __init__(self, status: int = 200, failure: Exception | None = None) -> None:
+        super().__init__()
+        self.status = status
+        self.failure = failure
+        self.requests: list[requests.PreparedRequest] = []
+        self.options: list[dict[str, Any]] = []
+        self.responses: list[requests.Response] = []
+
+    @override
+    def send(
+        self,
+        request: requests.PreparedRequest,
+        stream: bool = False,
+        timeout: Any = None,
+        verify: bool | str = True,
+        cert: Any = None,
+        proxies: Any = None,
+    ) -> requests.Response:
+        """Records the request and its transport options, then fails or answers."""
+        self.requests.append(request)
+        self.options.append({"stream": stream, "timeout": timeout, "proxies": proxies})
+        if self.failure is not None:
+            raise self.failure
+        response = requests.Response()
+        response.status_code = self.status
+        response.url = request.url or ""
+        response.request = request
+        cast(Any, response)._content = b'{"ok": true}'
+        self.responses.append(response)
+        return response
+
+
+def _session_over(adapter: HTTPAdapter) -> requests.Session:
+    """Returns a session whose `http://` and `https://` requests use `adapter`."""
+    session = requests.Session()
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 
 class _QuietHandler(BaseHTTPRequestHandler):
@@ -88,8 +120,8 @@ class _QuietHandler(BaseHTTPRequestHandler):
 class _LocalServerTestCase(unittest.TestCase):
     """Base for tests that need a real socket. Subclasses supply `handler`.
 
-    A real server is the only way to observe some of what this package promises
-    -- retries happen below `Session.request`, and only a socket has a body to
+    A real server is the only way to observe some of what this package promises:
+    retries happen below `Session.request`, and only a socket has a body to
     drain, so two test classes need one. The shared setup lives here rather
     than in both.
     """
@@ -123,27 +155,25 @@ class _LocalServerTestCase(unittest.TestCase):
 class TestHTTPClient(unittest.TestCase):
     """Test cases for the HTTP client class."""
 
-    @patch(SESSION_REQUEST)
-    def test_verb_methods_forward_their_own_method_url_and_kwargs(
-        self, mock_request: MagicMock
-    ) -> None:
-        """Test each verb method delegates with its own method name and the kwargs.
+    def test_verb_methods_forward_their_own_method_url_and_kwargs(self) -> None:
+        """Test each verb method sends its own method name, the URL and the kwargs.
 
         The seven wrappers carry no behaviour, so this is their whole contract,
         stated once instead of once per verb. Driving the loop from
         `ALLOWED_METHODS` also asserts every accepted method has a wrapper.
 
-        Asserting the entire call pins two things besides the delegation: the
-        client's timeout reaches the session, and no `stream=True` is added
-        without a progress bar -- streaming would only hold the connection open
-        for longer.
+        Reading the request off the transport pins two things besides the
+        delegation: the client's timeout reaches the transport, and no
+        `stream=True` is added without a progress bar. Streaming would only hold
+        the connection open for longer.
         """
-        mock_request.return_value.status_code = 200
+        adapter = _RecordingAdapter()
 
-        with HTTPClient() as client:
+        with HTTPClient(session=_session_over(adapter)) as client:
             for method in sorted(HTTPClient.ALLOWED_METHODS):
                 with self.subTest(method=method):
-                    mock_request.reset_mock()
+                    adapter.requests.clear()
+                    adapter.options.clear()
                     send = getattr(client, method.lower())
 
                     response = send(
@@ -151,88 +181,85 @@ class TestHTTPClient(unittest.TestCase):
                     )
 
                     self.assertEqual(response.status_code, 200)
-                    mock_request.assert_called_once_with(
-                        method=method,
-                        url="https://api.example.com",
-                        timeout=30,
-                        headers={"X-Verb": method},
-                    )
+                    (request,) = adapter.requests
+                    self.assertEqual(request.method, method)
+                    self.assertEqual(request.url, "https://api.example.com/")
+                    self.assertEqual(request.headers["X-Verb"], method)
+                    (options,) = adapter.options
+                    self.assertEqual(options["timeout"], 30)
+                    self.assertFalse(options["stream"])
 
-    @patch(SESSION_REQUEST, side_effect=requests.exceptions.ConnectionError("boom"))
-    def test_get_request_connection_failure_maps_to_custom_exception(
-        self, _: MagicMock
-    ) -> None:
+    def test_get_request_connection_failure_maps_to_custom_exception(self) -> None:
         """Test a connection failure is mapped to the custom exception."""
-        client = HTTPClient()
-        with self.assertRaises(HTTPConnectionError):
+        adapter = _RecordingAdapter(failure=requests.exceptions.ConnectionError("boom"))
+        with (
+            HTTPClient(session=_session_over(adapter)) as client,
+            self.assertRaises(HTTPConnectionError),
+        ):
             client.get("https://api.example.com")
 
-    @patch(SESSION_REQUEST, side_effect=requests.exceptions.RetryError("exhausted"))
-    def test_retry_error_maps_to_connection_error(self, _: MagicMock) -> None:
+    def test_retry_error_maps_to_connection_error(self) -> None:
         """Test adapter retry exhaustion is mapped to the connection exception."""
-        client = HTTPClient()
-        with self.assertRaises(HTTPConnectionError):
+        adapter = _RecordingAdapter(failure=requests.exceptions.RetryError("exhausted"))
+        with (
+            HTTPClient(session=_session_over(adapter)) as client,
+            self.assertRaises(HTTPConnectionError),
+        ):
             client.get("https://api.example.com")
 
     @patch(BUFFER_INTO)
-    @patch(SESSION_REQUEST)
     def test_get_request_with_progress_streams_and_delegates_the_drain(
-        self, mock_request: MagicMock, mock_buffer_into: MagicMock
+        self, mock_buffer_into: MagicMock
     ) -> None:
         """Test a progress-enabled GET streams and hands the body to `_download`."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_request.return_value = mock_response
+        adapter = _RecordingAdapter()
 
-        client = HTTPClient(show_progress=True)
-        response = client.get("https://api.example.com")
+        with HTTPClient(show_progress=True, session=_session_over(adapter)) as client:
+            response = client.get("https://api.example.com")
 
-        self.assertIs(response, mock_response)
-        self.assertTrue(mock_request.call_args.kwargs["stream"])
+        self.assertIs(response, adapter.responses[0])
+        self.assertTrue(adapter.options[0]["stream"])
         mock_buffer_into.assert_called_once_with(
-            mock_response,
+            response,
             chunk_size=HTTPClient.DOWNLOAD_CHUNK_SIZE,
             min_size=HTTPClient.MIN_SIZE_FOR_PROGRESS,
             desc="Downloading https://api.example.com",
         )
 
     @patch(BUFFER_INTO)
-    @patch(SESSION_REQUEST)
     def test_get_request_without_progress_does_not_stream(
-        self, mock_request: MagicMock, mock_buffer_into: MagicMock
+        self, mock_buffer_into: MagicMock
     ) -> None:
         """Test GET request without progress neither streams nor drains."""
-        mock_request.return_value.status_code = 200
+        adapter = _RecordingAdapter()
 
-        client = HTTPClient(show_progress=False)
-        response = client.get("https://api.example.com")
+        with HTTPClient(show_progress=False, session=_session_over(adapter)) as client:
+            response = client.get("https://api.example.com")
 
         self.assertEqual(response.status_code, 200)
-        self.assertNotIn("stream", mock_request.call_args.kwargs)
+        self.assertFalse(adapter.options[0]["stream"])
         mock_buffer_into.assert_not_called()
 
     @patch(BUFFER_INTO)
-    @patch(SESSION_REQUEST)
     def test_explicit_stream_suppresses_the_progress_drain(
-        self, mock_request: MagicMock, mock_buffer_into: MagicMock
+        self, mock_buffer_into: MagicMock
     ) -> None:
         """Test `stream=True` wins over `show_progress`, leaving the body unread.
 
         `TestProgressAgainstRealServer` proves the same thing against a socket;
         this asserts the client asked for it.
         """
-        mock_request.return_value.status_code = 200
+        adapter = _RecordingAdapter()
 
-        client = HTTPClient(show_progress=True)
-        client.get("https://api.example.com", stream=True)
+        with HTTPClient(show_progress=True, session=_session_over(adapter)) as client:
+            client.get("https://api.example.com", stream=True)
 
-        self.assertTrue(mock_request.call_args.kwargs["stream"])
+        self.assertTrue(adapter.options[0]["stream"])
         mock_buffer_into.assert_not_called()
 
     @patch(BUFFER_INTO)
-    @patch(SESSION_REQUEST)
     def test_class_constant_overrides_reach_the_download(
-        self, mock_request: MagicMock, mock_buffer_into: MagicMock
+        self, mock_buffer_into: MagicMock
     ) -> None:
         """Test the documented subclassing hook still tunes the download."""
 
@@ -242,23 +269,23 @@ class TestHTTPClient(unittest.TestCase):
             DOWNLOAD_CHUNK_SIZE = 1024
             MIN_SIZE_FOR_PROGRESS = 1
 
-        mock_request.return_value.status_code = 200
-        SmallBarClient(show_progress=True).get("https://api.example.com")
+        adapter = _RecordingAdapter()
+        with SmallBarClient(
+            show_progress=True, session=_session_over(adapter)
+        ) as client:
+            client.get("https://api.example.com")
 
         self.assertEqual(mock_buffer_into.call_args.kwargs["chunk_size"], 1024)
         self.assertEqual(mock_buffer_into.call_args.kwargs["min_size"], 1)
 
-    @patch(SESSION_REQUEST)
-    def test_http_error_maps_to_response_error(self, mock_request: MagicMock) -> None:
+    def test_http_error_maps_to_response_error(self) -> None:
         """Test HTTP errors are mapped to the custom response exception."""
-        mock_response = MagicMock()
-        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
-            "bad status"
-        )
-        mock_request.return_value = mock_response
+        adapter = _RecordingAdapter(status=500)
 
-        client = HTTPClient(retries=1)
-        with self.assertRaises(ResponseError):
+        with (
+            HTTPClient(retries=1, session=_session_over(adapter)) as client,
+            self.assertRaises(ResponseError),
+        ):
             client.get("https://api.example.com")
 
     def test_unsupported_method_rejected(self) -> None:
@@ -304,17 +331,16 @@ class TestVerboseOutput(unittest.TestCase):
     """What `verbose=True` prints about a request before it is sent."""
 
     @staticmethod
-    def _verbose_get(**kwargs: Any) -> tuple[str, Any]:
-        """Sends one verbose GET through a mocked session and returns its stdout."""
-        response = MagicMock(status_code=200, headers={"Content-Type": "text/plain"})
+    def _verbose_get(**kwargs: Any) -> tuple[str, _RecordingAdapter]:
+        """Sends one verbose GET through a recording transport and returns its stdout."""
+        adapter = _RecordingAdapter()
         stdout = io.StringIO()
         with (
-            patch(SESSION_REQUEST, return_value=response) as mock_request,
             contextlib.redirect_stdout(stdout),
-            HTTPClient(verbose=True) as client,
+            HTTPClient(verbose=True, session=_session_over(adapter)) as client,
         ):
             client.get("http://example.test/", **kwargs)
-        return stdout.getvalue(), mock_request
+        return stdout.getvalue(), adapter
 
     def test_a_request_without_secrets_is_printed_as_it_always_was(self) -> None:
         """Pin the line's shape, so redaction is known to change nothing else."""
@@ -342,7 +368,7 @@ class TestVerboseOutput(unittest.TestCase):
 
         before = dict(headers)
 
-        output, mock_request = self._verbose_get(headers=headers)
+        output, adapter = self._verbose_get(headers=headers)
 
         for secret in ("S3CR3T", "cHJveHk=", "abc123"):
             self.assertNotIn(secret, output)
@@ -350,7 +376,9 @@ class TestVerboseOutput(unittest.TestCase):
         self.assertIn("'X-Trace': 't-1'", output)
         # Compared with a copy taken beforehand: redacting the caller's own dict
         # in place would change what is sent, and `headers` is that same dict.
-        self.assertEqual(mock_request.call_args.kwargs["headers"], before)
+        sent = adapter.requests[0].headers
+        for name, value in before.items():
+            self.assertEqual(sent[name], value)
         self.assertEqual(headers, before)
 
     def test_header_names_given_as_bytes_are_redacted_too(self) -> None:
@@ -362,12 +390,15 @@ class TestVerboseOutput(unittest.TestCase):
         headers = {b"Authorization": b"Bearer S3CR3T", b"COOKIE": b"sid=abc123"}
         before = dict(headers)
 
-        output, mock_request = self._verbose_get(headers=headers)
+        output, adapter = self._verbose_get(headers=headers)
 
         self.assertNotIn("S3CR3T", output)
         self.assertNotIn("abc123", output)
         self.assertEqual(output.count("<redacted>"), 2)
-        self.assertEqual(mock_request.call_args.kwargs["headers"], before)
+        sent = adapter.requests[0].headers
+        self.assertEqual(sent["Authorization"], b"Bearer S3CR3T")
+        self.assertEqual(sent["Cookie"], b"sid=abc123")
+        self.assertEqual(headers, before)
 
     def test_the_proxies_argument_is_redacted_but_still_sent(self) -> None:
         """Test a proxy URL with a password in it is not echoed.
@@ -377,22 +408,23 @@ class TestVerboseOutput(unittest.TestCase):
         """
         proxies = {"http": "http://user:hunter2@proxy.test:3128"}
 
-        output, mock_request = self._verbose_get(proxies=proxies)
+        output, adapter = self._verbose_get(proxies=proxies)
 
         self.assertNotIn("hunter2", output)
         self.assertNotIn("proxy.test", output)
-        self.assertEqual(mock_request.call_args.kwargs["proxies"], proxies)
+        self.assertEqual(adapter.options[0]["proxies"], proxies)
 
     def test_the_auth_and_cookies_arguments_are_redacted_but_still_sent(self) -> None:
         """Test credentials passed as `auth=` or `cookies=` are not echoed either."""
-        output, mock_request = self._verbose_get(
+        output, adapter = self._verbose_get(
             auth=("user", "hunter2"), cookies={"sid": "abc123"}
         )
 
         self.assertNotIn("hunter2", output)
         self.assertNotIn("abc123", output)
-        self.assertEqual(mock_request.call_args.kwargs["auth"], ("user", "hunter2"))
-        self.assertEqual(mock_request.call_args.kwargs["cookies"], {"sid": "abc123"})
+        sent = adapter.requests[0].headers
+        self.assertEqual(sent["Authorization"], "Basic dXNlcjpodW50ZXIy")
+        self.assertEqual(sent["Cookie"], "sid=abc123")
 
 
 class _Terminal(io.StringIO):
@@ -422,11 +454,11 @@ class TestVerboseErrorsOnATerminal(unittest.TestCase):
             with self.subTest(cause=cause.__name__):
                 hostile = cause("failure: \x1b]0;pwned\x07")
                 terminal = _Terminal()
+                adapter = _RecordingAdapter(failure=hostile)
 
                 with (
-                    patch(SESSION_REQUEST, side_effect=hostile),
                     patch("sys.stdout", new=terminal),
-                    HTTPClient(verbose=True) as client,
+                    HTTPClient(verbose=True, session=_session_over(adapter)) as client,
                     self.assertRaises(raised),
                 ):
                     client.get("http://example.test/")
@@ -451,18 +483,17 @@ class TestSessionReuse(unittest.TestCase):
         self.assertNotIn(404, retry.status_forcelist)
         client.close()
 
-    @patch(SESSION_REQUEST)
-    def test_requests_reuse_one_session(self, mock_request: MagicMock) -> None:
+    def test_requests_reuse_one_session(self) -> None:
         """Test repeated calls go through a single pooled session."""
-        mock_request.return_value.status_code = 200
-        client = HTTPClient()
+        adapter = _RecordingAdapter()
+        client = HTTPClient(session=_session_over(adapter))
         session = client.session
 
         for _ in range(3):
             client.get("https://api.example.com")
 
         self.assertIs(client.session, session)
-        self.assertEqual(mock_request.call_count, 3)
+        self.assertEqual(len(adapter.requests), 3)
 
     def test_context_manager_closes_session(self) -> None:
         """Test the context manager releases the connection pool on exit."""
@@ -485,44 +516,13 @@ class TestSessionReuse(unittest.TestCase):
         client.close()
 
 
-class _RecordingAdapter(HTTPAdapter):
-    """A transport that answers from memory and records what it was asked for.
-
-    Mounted on a session handed to `HTTPClient`, it replaces the network without
-    patching anything.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self.requests: list[requests.PreparedRequest] = []
-
-    @override
-    def send(
-        self,
-        request: requests.PreparedRequest,
-        stream: bool = False,
-        timeout: Any = None,
-        verify: bool | str = True,
-        cert: Any = None,
-        proxies: Any = None,
-    ) -> requests.Response:
-        """Records the request and answers it with a canned 200."""
-        self.requests.append(request)
-        response = requests.Response()
-        response.status_code = 200
-        response.url = request.url or ""
-        response.request = request
-        cast(Any, response)._content = b'{"ok": true}'
-        return response
-
-
 class TestInjectedSession(unittest.TestCase):
     """Session injection substitutes the transport at the client's interface.
 
     `patch("requests.Session.request")` substitutes below this interface and
     above the adapter, so it cannot see a retry. A session passed to the
     constructor is substituted at the interface and keeps urllib3's machinery
-    underneath it -- which is what `TestRetryWithoutASocket` uses.
+    underneath it, which is what `TestRetryWithoutASocket` uses.
     """
 
     def test_an_injected_session_carries_the_request(self) -> None:
@@ -570,10 +570,10 @@ class TestInjectedSession(unittest.TestCase):
 class TestRetryPolicy(unittest.TestCase):
     """Retry behaviour exercised against the real urllib3 machinery.
 
-    These deliberately avoid mocking `Session.request`: that mock sits above the
+    These avoid mocking `Session.request`: that mock sits above the
     adapter, so it cannot observe retries at all. An earlier revision claimed
     "a POST is never silently re-sent" on the strength of such a mock, and the
-    claim was wrong -- urllib3 filters read errors and statuses by method, but
+    claim was wrong: urllib3 filters read errors and statuses by method, but
     retries connection errors for every method.
     """
 
@@ -835,7 +835,7 @@ class TestRetryAgainstRealServer(_LocalServerTestCase):
         response.close()
 
 
-#: Deliberately over `MIN_SIZE_FOR_PROGRESS`, so the progress path is fully live.
+#: Over `MIN_SIZE_FOR_PROGRESS` on purpose, so the progress path is fully live.
 LARGE_BODY = b"snaffle!" * (6 * 1024 * 1024 // 8)
 
 
@@ -866,7 +866,7 @@ class TestProgressAgainstRealServer(_LocalServerTestCase):
 
         `_content_consumed` is the assertion that separates the two cases.
         `iter_content` re-slices an already-buffered body, so it yields the full
-        payload either way -- it cannot tell a live socket from a drained one.
+        payload either way, so it cannot tell a live socket from a drained one.
         The flag is what the API reference documents, so it is the contract.
         The bar on stderr is the same difference, made visible.
         """

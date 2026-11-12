@@ -7,6 +7,8 @@ import re
 import unittest
 from pathlib import Path
 
+from tests._isolation import setUpModule  # noqa: F401
+
 ROOT = Path(__file__).resolve().parents[1]
 CI = ROOT / ".github" / "workflows" / "ci.yml"
 CLOUD_ENV = ROOT / ".cursor" / "environment.json"

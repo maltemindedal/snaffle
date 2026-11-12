@@ -41,7 +41,7 @@ with HTTPClient() as client:
         print(response.status_code)
 ```
 
-The pool holds up to `HTTPClient.POOL_SIZE` (16) connections, so a client
+The pool holds up to `HTTPClient.POOL_SIZE` connections, so a client
 talking to several hosts keeps a connection to each.
 
 `HTTPClient` is not documented as thread-safe. The underlying
@@ -51,7 +51,7 @@ concurrency.
 
 ## Handle errors
 
-Three exceptions, one base class:
+Every exception the client raises derives from `HTTPClientError`:
 
 ```python
 from snaffle import HTTPClient, HTTPClientError, HTTPConnectionError, ResponseError
@@ -64,13 +64,12 @@ with HTTPClient() as client:
         # retried and never recovered arrives here too, carrying the real code.
         print(f"Server said no: {error}")
     except HTTPConnectionError as error:
-        # DNS failure, refused connection, a connect timeout, a read timeout
-        # on a GET, HEAD, PUT, DELETE or OPTIONS once its retries are spent, or
-        # a server that went silent part-way through the body (any method).
+        # DNS failure, refused connection, a connect timeout, or a server that
+        # went silent. Which timeouts land here depends on the method; the API
+        # reference runs an example of each.
         print(f"Could not reach it: {error}")
     except HTTPClientError as error:
-        # Anything else -- a read timeout on a POST or PATCH before the response
-        # begins, too many redirects, a malformed URL.
+        # Anything else, such as too many redirects or a malformed URL.
         print(f"Request failed: {error}")
 ```
 
@@ -138,10 +137,9 @@ with HTTPClient(timeout=60, retries=5) as client:
 `retries` counts *total attempts*, not retries after the first. `retries=1`
 means one attempt and no retry. Both arguments must be greater than zero.
 
-Retries carry a `backoff_factor` of 0.3 and honour `Retry-After` for up to two
-minutes per retry. Which
+Retries back off exponentially and honour a capped `Retry-After`. Which
 failures are retried depends on the method. A `POST` is never replayed once
-the request is on the wire. The table is in the
+the request is on the wire. The values and the table are in the
 [API reference](../reference/python-api.md#retry-behaviour); the reasoning is in
 [ADR 0001](../architecture/decisions/0001-selective-retries-and-connection-pooling.md).
 
@@ -151,7 +149,7 @@ The tunable constants are class attributes, so subclassing overrides them:
 
 ```python
 class PatientClient(HTTPClient):
-    RETRY_STATUSES = frozenset({408, 425, 429, 500, 502, 503, 504, 521})
+    RETRY_STATUSES = HTTPClient.RETRY_STATUSES | {521}
     POOL_SIZE = 64
     MIN_SIZE_FOR_PROGRESS = 1024 * 1024  # bar from 1 MiB up
 ```
