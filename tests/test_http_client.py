@@ -512,7 +512,7 @@ class TestSessionReuse(unittest.TestCase):
         """
         client = HTTPClient()
         weakref.ref(client)
-        client.custom_attribute = "allowed"  # ty: ignore[unresolved-attribute]
+        client.custom_attribute = "allowed"  # ty: ignore[missing-attribute]
         client.close()
 
 
